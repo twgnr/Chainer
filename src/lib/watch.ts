@@ -7,6 +7,9 @@ import { classifyHarmful } from "./trace/risk";
 import { notify } from "./notify";
 import { formatAmount, shortHash } from "./format";
 import { isChainId, type ChainId } from "./chains";
+import { toLocale, type Locale } from "./i18n/locale";
+import { WATCH_TEXT } from "./i18n/notify";
+import { translateHint } from "./i18n/hints";
 
 export interface WatchCheckResult {
   checked: number;
@@ -37,7 +40,27 @@ export async function checkWatches(opts: { userId?: string; limit?: number } = {
 
   // Kontexte je Nutzer nur einmal aufbauen
   const ctxCache = new Map<string, Awaited<ReturnType<typeof contextForUser>>>();
-  const userCache = new Map<string, { email: string; telegramChatId?: string; webhookUrl?: string; wantsEmail: boolean }>();
+  const userCache = new Map<
+    string,
+    { email: string; telegramChatId?: string; webhookUrl?: string; wantsEmail: boolean; locale: Locale }
+  >();
+
+  /** Nutzerangaben je Konto nur einmal laden. */
+  async function userOf(userId: string) {
+    let user = userCache.get(userId);
+    if (!user) {
+      const u = await User.findById(userId).lean();
+      user = {
+        email: u?.email ?? "",
+        telegramChatId: u?.notify?.telegramChatId || undefined,
+        webhookUrl: u?.notify?.webhookUrl || undefined,
+        wantsEmail: u?.notify?.email !== false,
+        locale: toLocale(u?.locale),
+      };
+      userCache.set(userId, user);
+    }
+    return user;
+  }
 
   for (const w of watches) {
     const chain: ChainId = isChainId(w.chain) ? w.chain : "bitcoin";
@@ -72,10 +95,13 @@ export async function checkWatches(opts: { userId?: string; limit?: number } = {
 
       if (newTx && Math.abs(delta) >= (w.minValueSat || 0)) {
         out.changed++;
-        const dir = delta >= 0 ? "Eingang" : "Ausgang";
+        // Die Sprache des Kontos bestimmt Text und Zahlenformat.
+        const user = await userOf(userId);
+        const t = WATCH_TEXT[user.locale];
+        const dir = delta >= 0 ? t.incoming : t.outgoing;
         // Esplora liefert auch Transaktionen aus dem Mempool; sie werden als
         // unbestätigt gemeldet, damit man sofort reagieren kann.
-        const pending = latest && !latest.confirmed ? " (noch unbestätigt)" : "";
+        const pending = latest && !latest.confirmed ? t.unconfirmed : "";
 
         // Bei Zuflüssen die direkten Absender gegen die Label- und Sanktionsquellen prüfen
         let riskNote = "";
@@ -93,43 +119,41 @@ export async function checkWatches(opts: { userId?: string; limit?: number } = {
             try {
               const labels = await lookupLabels(ctx, sender);
               const verdict = classifyHarmful(labels.labels, true);
-              if (verdict) hits.push(`${sender} – ${verdict.label} (Quelle: ${verdict.source})`);
+              if (verdict)
+                hits.push(t.sender(sender, translateHint(verdict.label, user.locale), verdict.source));
             } catch {
               /* Label-Quelle nicht erreichbar */
             }
           }
           if (hits.length) {
-            riskNote = `\n\nWARNUNG: Der Absender ist als schädlich gemeldet:\n${hits.join("\n")}`;
-            riskShort = " \u26a0 von schädlicher Adresse";
+            riskNote = t.riskWarning(hits.join("\n"));
+            riskShort = t.riskShort;
           }
         }
 
         const text =
-          `${dir} auf ${w.label || w.address}\n` +
-          `Betrag: ${formatAmount(Math.abs(delta), chain)}\n` +
-          `Neuer Saldo: ${formatAmount(info.data.balanceSat, chain)}\n` +
-          `Transaktion: ${latest!.txid}` +
-          riskNote;
+          t.body(
+            dir,
+            w.label || w.address,
+            formatAmount(Math.abs(delta), chain, 8, user.locale),
+            formatAmount(info.data.balanceSat, chain, 8, user.locale),
+            latest!.txid,
+          ) + riskNote;
         w.events.unshift({
           at: new Date(),
           txid: latest!.txid,
-          text: `${dir}${pending} ${formatAmount(Math.abs(delta), chain)} (${shortHash(latest!.txid, 6)})${riskShort}`,
+          text: t.event(
+            dir,
+            pending,
+            formatAmount(Math.abs(delta), chain, 8, user.locale),
+            shortHash(latest!.txid, 6),
+            riskShort,
+          ),
           deltaSat: delta,
           read: false,
         });
         if (w.events.length > 50) w.events.splice(50);
 
-        let user = userCache.get(userId);
-        if (!user) {
-          const u = await User.findById(userId).lean();
-          user = {
-            email: u?.email || "",
-            telegramChatId: u?.notify?.telegramChatId || undefined,
-            webhookUrl: u?.notify?.webhookUrl || undefined,
-            wantsEmail: u?.notify?.email !== false,
-          };
-          userCache.set(userId, user);
-        }
         const results = await notify(
           {
             email: user.wantsEmail ? user.email : undefined,

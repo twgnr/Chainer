@@ -86,9 +86,14 @@ sources and traces the flow of funds as a graph.
 
 ## Supported chains
 
-Bitcoin, Litecoin, Dogecoin, Bitcoin Cash, Ethereum and Tron. Account-based chains are mapped onto the same graph
-model, so tracing, taint and presentation work identically; token transfers appear as their own edges. Tron is
-particularly relevant because a large part of today's stablecoin fraud runs over USDT-TRC20.
+Bitcoin, Litecoin, Dogecoin, Bitcoin Cash, Ethereum, Polygon, Arbitrum and Tron. Account-based chains are mapped
+onto the same graph model, so tracing, taint and presentation work identically; token transfers appear as their own
+edges. Tron is particularly relevant because a large part of today's stablecoin fraud runs over USDT-TRC20.
+
+All EVM chains share one implementation; a further chain only needs an entry in `src/lib/chains.ts` with its
+Etherscan chain id and, where one exists, its Blockscout instance. BNB Smart Chain and Base are deliberately absent:
+neither has a public Blockscout instance, and the free Etherscan tier excludes both, so there would be no free data
+source for them.
 
 ## Data sources
 
@@ -102,8 +107,8 @@ particularly relevant because a large part of today's stablecoin fraud runs over
 | Blockchain.com | Blockchain | BTC | no |
 | BlockCypher | Blockchain | BTC, LTC, DOGE | optional |
 | Blockchair | Blockchain | BTC, LTC, DOGE, BCH | optional (often IP-blocked without a key) |
-| Blockscout | Blockchain | ETH | no |
-| Etherscan | Blockchain | ETH | required |
+| Blockscout | Blockchain | ETH, POL, ARB | no |
+| Etherscan | Blockchain | ETH, POL, ARB | required |
 | TronGrid | Blockchain | TRX | optional (3 requests/s without a key) |
 | OFAC sanctions list | Sanctions | BTC, LTC, BCH, ETH | no |
 | Stablecoin blocklists (Tether, Circle) | frozen addresses | ETH, TRX | no |
@@ -151,7 +156,7 @@ src/lib/trace/deposit.ts   Detection of deposit addresses
 src/lib/trace/fingerprint.ts Wallet fingerprint from the raw traits
 src/lib/trace/crosschain.ts Swap and bridge services, comparison on the destination chain
 src/lib/trace/mixer.ts     Correlation of mixer payouts
-src/lib/i18n               Language selection, translation of texts from the analysis and the API
+src/lib/i18n               Language selection, translation of texts from the analysis, the API and notifications
 src/lib/theme.ts           Light/dark mode
 src/lib/evidence.ts        Evidence record of the raw data used
 src/lib/jobs.ts            Queue for background jobs
@@ -207,6 +212,15 @@ follow the operating system. Both are chosen in the header and stored in a cooki
 in the right language and mode straight away. Without a cookie the language is taken from the `Accept-Language`
 header, falling back to English.
 
+Notifications are created in the background, where there is no request to read a language from. The language is
+therefore stored on the account when you switch it, and emails, Telegram messages and webhooks follow it. The
+OpenAPI document at `/api/openapi` is translated as well.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs types, style, tests and a production build on every push and pull request. The same
+four steps run locally with `npm run check`.
+
 ### Docker
 
 ```bash
@@ -253,16 +267,23 @@ npm test          # once
 npm run test:watch
 ```
 
-The tests cover three levels and touch neither the network nor the database:
+`npm run test:ui` runs only the component tests, `npm run check` everything that CI runs (types, style, tests,
+build).
 
-- **Logic**: taint models, change, peeling and deposit detection, timing patterns, risk classification, wallet
-  fingerprint, address formats, formatting, translation of the texts from the analysis and the API, TagPack parser,
-  cache, inflow analysis, evidence record, migration and logging.
+The tests cover four levels and touch neither the network nor the database:
+
+- **Logic**: the trace engine and the connection search against a synthetic chain, taint models, change, peeling and
+  deposit detection, timing patterns, risk classification, wallet fingerprint, address formats, formatting,
+  encryption including key rotation, access tokens, TagPack parser, cache, inflow analysis, evidence record,
+  migration and logging.
+- **Translation**: guard tests that read the German texts straight out of the source files and the generated OpenAPI
+  document and fail if any of them is not translated. Without them a typo in a lookup table would silently ship
+  German text into the English interface.
 - **Conversion of the provider data**: recorded real responses in `src/lib/providers/__fixtures__/` are sent through
   the providers and the result is checked. If a provider changes its format, it shows up here. Re-record with
   `npm run fixtures`.
-- **API routes**: validation, permissions, error codes and rate limiting of all endpoints with the providers
-  swapped out.
+- **API routes and components**: validation, permissions, error codes and rate limiting of all endpoints with the
+  providers swapped out; the components render under jsdom in both languages.
 
 ## Background services
 
@@ -300,6 +321,7 @@ CRON_SECRET=<random value>       # external cron service:
 - The free CoinGecko tier only serves rate histories for the last 365 days; older transactions appear without their
   value at the time.
 - Very active addresses (exchanges) are not expanded further beyond depth 1, so the graph stays readable.
+- The address page loads 50 transactions at a time, up to 500. Beyond that a trace is the better tool.
 - The wallet fingerprint needs raw traits that currently only the Esplora interfaces deliver (mempool.space,
   Blockstream, litecoinspace).
 - A complete search across a foreign chain is not possible without an index of your own. The cross-chain comparison
@@ -311,4 +333,3 @@ CRON_SECRET=<random value>       # external cron service:
 - After five failed attempts an account is temporarily locked; the lock grows with further attempts up to one hour.
   The error message does not reveal whether the email address exists.
 - Stored API keys and node credentials are kept encrypted with AES-256-GCM.
-- Notification emails and the OpenAPI document are currently still in German only.

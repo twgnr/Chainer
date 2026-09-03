@@ -276,6 +276,11 @@ const TEST_ADDRESS: Record<ChainId, string> = {
   dogecoin: "DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L",
   "bitcoin-cash": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
   ethereum: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+  // Weitere EVM-Ketten: dieselbe, auf allen EVM-Ketten aktive Adresse. Bewusst
+  // keine Stablecoin-Verträge — deren Transaktionslisten sind so lang, dass die
+  // Abfrage in eine Zeitüberschreitung läuft.
+  polygon: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+  arbitrum: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
   // Tron: Vertragsadresse von USDT-TRC20, dauerhaft aktiv
   tron: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
 };

@@ -300,7 +300,7 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
           csvField(r.verdict ? (r.verdict.severity === "high" ? t.high : t.medium) : r.valid ? t.clean : ""),
           csvField(r.verdict ? categoryText(r.verdict.category, locale) : ""),
           csvField(r.verdict?.source ?? ""),
-          csvField(r.labels.map((l) => `${l.label} (${l.source})`).join(" | ")),
+          csvField(r.labels.map((l) => `${translateHint(l.label, locale)} (${l.source})`).join(" | ")),
           csvField(r.balanceSat === undefined ? "" : fmt.amount(r.balanceSat, data.chain)),
           csvField(statusText(r, t, locale)),
         ].join(";"),
@@ -510,10 +510,10 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
                             <span
                               key={`${l.source}-${i}`}
                               className="rounded bg-panel px-1.5 py-0.5 text-xs text-fg-2 ring-1 ring-border"
-                              title={`${l.source}${l.details ? ": " + l.details : ""}`}
+                              title={`${l.source}${l.details ? ": " + translateHint(l.details, locale) : ""}`}
                             >
                               {l.own ? "✎ " : ""}
-                              {l.label}
+                              {translateHint(l.label, locale)}
                             </span>
                           ))}
                         </div>

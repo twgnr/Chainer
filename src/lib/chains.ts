@@ -3,7 +3,15 @@
  * Provider- und Graph-Abstraktion; Beträge werden immer in der kleinsten Einheit
  * geführt (Satoshi, Litoshi, Wei …).
  */
-export type ChainId = "bitcoin" | "litecoin" | "dogecoin" | "bitcoin-cash" | "ethereum" | "tron";
+export type ChainId =
+  | "bitcoin"
+  | "litecoin"
+  | "dogecoin"
+  | "bitcoin-cash"
+  | "ethereum"
+  | "polygon"
+  | "arbitrum"
+  | "tron";
 
 export type ChainKind = "utxo" | "account";
 
@@ -24,7 +32,16 @@ export interface ChainMeta {
   blockcypherPath?: string;
   /** Esplora-kompatible API */
   esplora?: { id: string; name: string; url: string; baseUrl: string };
+  /**
+   * EVM-Kette. `chainId` ist die Kennung der Etherscan-V2-Schnittstelle, die
+   * alle Ketten über denselben Endpunkt bedient. `blockscoutBase` fehlt, wenn
+   * es für die Kette keine öffentliche Blockscout-Instanz gibt — dann bleibt
+   * nur Etherscan, und der Key wird zur Pflicht.
+   */
+  evm?: { chainId: number; blockscoutBase?: string };
 }
+
+
 
 export const CHAINS: Record<ChainId, ChainMeta> = {
   bitcoin: {
@@ -90,6 +107,29 @@ export const CHAINS: Record<ChainId, ChainMeta> = {
     unit: "wei",
     coingeckoId: "ethereum",
     explorer: "https://etherscan.io",
+    evm: { chainId: 1, blockscoutBase: "https://eth.blockscout.com/api/v2" },
+  },
+  polygon: {
+    id: "polygon",
+    name: "Polygon",
+    symbol: "POL",
+    kind: "account",
+    decimals: 18,
+    unit: "wei",
+    coingeckoId: "matic-network",
+    explorer: "https://polygonscan.com",
+    evm: { chainId: 137, blockscoutBase: "https://polygon.blockscout.com/api/v2" },
+  },
+  arbitrum: {
+    id: "arbitrum",
+    name: "Arbitrum One",
+    symbol: "ETH",
+    kind: "account",
+    decimals: 18,
+    unit: "wei",
+    coingeckoId: "ethereum",
+    explorer: "https://arbiscan.io",
+    evm: { chainId: 42161, blockscoutBase: "https://arbitrum.blockscout.com/api/v2" },
   },
   tron: {
     id: "tron",
@@ -106,6 +146,20 @@ export const CHAINS: Record<ChainId, ChainMeta> = {
 export const DEFAULT_CHAIN: ChainId = "bitcoin";
 
 export const CHAIN_LIST = Object.values(CHAINS);
+
+/**
+ * Alle EVM-kompatiblen Ketten. Sie teilen sich Adressformat, Datenquellen und
+ * Abbildung auf das Graph-Modell; abgeleitet aus den Definitionen oben, damit
+ * eine neue Kette nur an einer Stelle eingetragen werden muss.
+ */
+export const EVM_CHAINS: ChainId[] = CHAIN_LIST.filter((c) => c.evm).map((c) => c.id);
+
+/** EVM-Ketten mit öffentlicher Blockscout-Instanz, also ohne Key nutzbar. */
+export const BLOCKSCOUT_CHAINS: ChainId[] = CHAIN_LIST.filter((c) => c.evm?.blockscoutBase).map((c) => c.id);
+
+export function isEvmChain(chain: ChainId): boolean {
+  return !!CHAINS[chain]?.evm;
+}
 
 export function chainMeta(chain: ChainId | undefined): ChainMeta {
   return CHAINS[chain || DEFAULT_CHAIN] || CHAINS[DEFAULT_CHAIN];
@@ -153,6 +207,8 @@ export function isChainAddress(value: string, chain: ChainId): boolean {
     case "bitcoin-cash":
       return RE.bchCash.test(v) || RE.bchLegacy.test(v);
     case "ethereum":
+    case "polygon":
+    case "arbitrum":
       return RE.evm.test(v);
     case "tron":
       return RE.tron.test(v);
@@ -161,7 +217,7 @@ export function isChainAddress(value: string, chain: ChainId): boolean {
 
 export function isChainTxid(value: string, chain: ChainId): boolean {
   const v = value.trim();
-  return chain === "ethereum" ? RE.evmTx.test(v) : RE.hash64.test(v);
+  return isEvmChain(chain) ? RE.evmTx.test(v) : RE.hash64.test(v);
 }
 
 export function classifyChainInput(value: string, chain: ChainId): "address" | "txid" | "unknown" {

@@ -37,6 +37,7 @@ const EXACT: Record<string, string> = {
   /* Knoten-Labels aus der Analyse */
   "Neu geschürfte Coins": "Newly mined coins",
   "Sehr aktive Adresse (nur Auszug)": "Very active address (excerpt only)",
+  "noch nicht ausgegeben": "not spent yet",
 
   /* Fortschritt und Warnungen des Traces */
   "Abgebrochen.": "Cancelled.",
@@ -111,9 +112,19 @@ const EXACT: Record<string, string> = {
   "Kostenloser API-Key erhöht das Limit: https://www.trongrid.io":
     "A free API key raises the limit: https://www.trongrid.io",
   "Liste wird einmal täglich geladen": "The list is fetched once a day",
+  "Liste wird alle 6 Stunden geladen": "The list is fetched every 6 hours",
   "Listen werden zweimal täglich geladen": "The lists are fetched twice a day",
-  "Öffentlicher RPC, Ergebnis 24 h zwischengespeichert": "Public RPC, the result is cached for 24 h",
+  "öffentlicher RPC, Ergebnis 24 h zwischengespeichert": "Public RPC, the result is cached for 24 h",
   "Adresse ist als Lösegeld-Zahlungsadresse gemeldet": "The address is reported as a ransom payment address",
+  "OFAC-sanktioniert": "OFAC-sanctioned",
+  "Adresse steht auf der SDN-Liste des US-Finanzministeriums":
+    "The address is on the SDN list of the US Treasury",
+  "USDT gesperrt (Tether)": "USDT frozen (Tether)",
+  "USDC gesperrt (Circle)": "USDC frozen (Circle)",
+  "Adresse ist im USDT-Vertrag auf der Sperrliste; Guthaben ist eingefroren":
+    "The address is on the blocklist of the USDT contract; its balance is frozen",
+  "Adresse ist im USDC-Vertrag auf der Sperrliste; Guthaben ist eingefroren":
+    "The address is on the blocklist of the USDC contract; its balance is frozen",
 
   /* Antworten der API, die die Oberfläche unverändert anzeigt */
   "Falls ein Konto zu dieser E-Mail besteht, wurde ein Link zum Zurücksetzen verschickt.":

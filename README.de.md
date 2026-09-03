@@ -84,10 +84,15 @@ Datenquellen analysiert und Geldflüsse als Graph zurückverfolgt.
 
 ## Unterstützte Chains
 
-Bitcoin, Litecoin, Dogecoin, Bitcoin Cash, Ethereum und Tron. Konto-basierte Chains werden auf dasselbe
-Graph-Modell abgebildet, sodass Verfolgung, Taint und Darstellung identisch funktionieren; Token-Transfers
+Bitcoin, Litecoin, Dogecoin, Bitcoin Cash, Ethereum, Polygon, Arbitrum und Tron. Konto-basierte Chains werden auf
+dasselbe Graph-Modell abgebildet, sodass Verfolgung, Taint und Darstellung identisch funktionieren; Token-Transfers
 erscheinen als eigene Kanten. Tron ist besonders relevant, weil ein großer Teil des heutigen Stablecoin-Betrugs
 über USDT-TRC20 läuft.
+
+Alle EVM-Ketten teilen sich eine Umsetzung; eine weitere Kette braucht nur einen Eintrag in `src/lib/chains.ts` mit
+ihrer Etherscan-Kennung und, sofern vorhanden, ihrer Blockscout-Instanz. BNB Smart Chain und Base fehlen bewusst:
+für beide gibt es weder eine öffentliche Blockscout-Instanz noch Zugang über den kostenlosen Etherscan-Tarif, also
+keine kostenlose Datenquelle.
 
 ## Datenquellen
 
@@ -101,8 +106,8 @@ erscheinen als eigene Kanten. Tron ist besonders relevant, weil ein großer Teil
 | Blockchain.com | Blockchain | BTC | nein |
 | BlockCypher | Blockchain | BTC, LTC, DOGE | optional |
 | Blockchair | Blockchain | BTC, LTC, DOGE, BCH | optional (ohne Key oft IP-gesperrt) |
-| Blockscout | Blockchain | ETH | nein |
-| Etherscan | Blockchain | ETH | erforderlich |
+| Blockscout | Blockchain | ETH, POL, ARB | nein |
+| Etherscan | Blockchain | ETH, POL, ARB | erforderlich |
 | TronGrid | Blockchain | TRX | optional (ohne Key 3 Anfragen/s) |
 | OFAC-Sanktionsliste | Sanktionen | BTC, LTC, BCH, ETH | nein |
 | Stablecoin-Sperrlisten (Tether, Circle) | eingefrorene Adressen | ETH, TRX | nein |
@@ -150,7 +155,7 @@ src/lib/trace/deposit.ts   Erkennung von Einzahlungsadressen
 src/lib/trace/fingerprint.ts Wallet-Fingerabdruck aus den Rohmerkmalen
 src/lib/trace/crosschain.ts Tausch- und Brückendienste, Abgleich auf der Zielkette
 src/lib/trace/mixer.ts     Korrelation von Mixer-Ausgängen
-src/lib/i18n               Sprachauswahl, Übersetzung der Texte aus Analyse und API
+src/lib/i18n               Sprachauswahl, Übersetzung der Texte aus Analyse, API und Benachrichtigungen
 src/lib/theme.ts           Hell-/Dunkelmodus
 src/lib/evidence.ts        Beweissicherung der verwendeten Rohdaten
 src/lib/jobs.ts            Warteschlange für Hintergrund-Aufträge
@@ -206,6 +211,15 @@ Die Oberfläche gibt es auf **Englisch** (Standard) und **Deutsch**; das Farbsch
 Server die Seite gleich in der richtigen Sprache und im richtigen Modus ausliefert. Ohne Cookie richtet sich die
 Sprache nach dem Kopf `Accept-Language`, sonst nach Englisch.
 
+Benachrichtigungen entstehen im Hintergrund, wo es keine Anfrage gibt, aus der sich eine Sprache ablesen ließe. Sie
+wird deshalb beim Umschalten am Konto vermerkt; E-Mails, Telegram-Nachrichten und Webhooks folgen ihr. Auch das
+OpenAPI-Dokument unter `/api/openapi` wird übersetzt.
+
+### Fortlaufende Prüfung
+
+`.github/workflows/ci.yml` prüft bei jedem Push und jedem Pull Request Typen, Stil, Tests und einen Produktionsbuild.
+Dieselben vier Schritte laufen lokal mit `npm run check`.
+
 ### Docker
 
 ```bash
@@ -252,16 +266,23 @@ npm test          # einmalig
 npm run test:watch
 ```
 
-Die Tests decken drei Ebenen ab und greifen weder auf das Netz noch auf die Datenbank zu:
+`npm run test:ui` führt nur die Komponententests aus, `npm run check` alles, was auch die CI prüft (Typen, Stil,
+Tests, Build).
 
-- **Logik**: Taint-Modelle, Wechselgeld-, Peeling- und Einzahlungserkennung, Zeitmuster, Risikoeinstufung,
-  Wallet-Fingerabdruck, Adressformate, Formatierung, Übersetzung der Texte aus Analyse und API, TagPack-Parser,
-  Cache, Zuflussanalyse, Beweissicherung, Migration und Protokollierung.
+Die Tests decken vier Ebenen ab und greifen weder auf das Netz noch auf die Datenbank zu:
+
+- **Logik**: die Trace-Engine und die Verbindungssuche gegen eine erfundene Kette, Taint-Modelle, Wechselgeld-,
+  Peeling- und Einzahlungserkennung, Zeitmuster, Risikoeinstufung, Wallet-Fingerabdruck, Adressformate,
+  Formatierung, Verschlüsselung samt Schlüsselwechsel, Zugriffstoken, TagPack-Parser, Cache, Zuflussanalyse,
+  Beweissicherung, Migration und Protokollierung.
+- **Übersetzung**: Wächter-Tests lesen die deutschen Texte direkt aus den Quelldateien und aus dem erzeugten
+  OpenAPI-Dokument und schlagen an, sobald einer davon nicht übersetzt wird. Ohne sie würde ein Tippfehler in einer
+  Tabelle stillschweigend deutschen Text in die englische Oberfläche tragen.
 - **Umwandlung der Anbieterdaten**: aufgezeichnete echte Antworten in `src/lib/providers/__fixtures__/` werden durch
   die Provider geschickt und das Ergebnis geprüft. Ändert ein Anbieter sein Format, fällt es hier auf. Neu
   aufzeichnen mit `npm run fixtures`.
-- **API-Routen**: Validierung, Berechtigungen, Fehlercodes und Ratenbegrenzung aller Endpunkte mit ausgetauschten
-  Providern.
+- **API-Routen und Komponenten**: Validierung, Berechtigungen, Fehlercodes und Ratenbegrenzung aller Endpunkte mit
+  ausgetauschten Providern; die Komponenten werden unter jsdom in beiden Sprachen gerendert.
 
 ## Hintergrunddienste
 
@@ -300,6 +321,7 @@ CRON_SECRET=<zufälliger Wert>    # externer Cron-Dienst:
 - Der kostenlose CoinGecko-Zugang liefert Kurshistorien nur für die letzten 365 Tage; ältere Transaktionen
   erscheinen ohne damaligen Wert.
 - Sehr aktive Adressen (Börsen) werden ab Tiefe 1 nicht weiter expandiert, damit der Graph lesbar bleibt.
+- Die Adressseite lädt 50 Transaktionen auf einmal, bis höchstens 500. Darüber hinaus ist ein Trace das bessere Mittel.
 - Der Wallet-Fingerabdruck braucht Rohmerkmale, die derzeit nur die Esplora-Schnittstellen liefern
   (mempool.space, Blockstream, litecoinspace).
 - Eine vollständige Suche über eine fremde Chain ist ohne eigenen Index nicht möglich. Der Cross-Chain-Abgleich
@@ -311,4 +333,3 @@ CRON_SECRET=<zufälliger Wert>    # externer Cron-Dienst:
 - Nach fünf Fehlversuchen wird ein Konto vorübergehend gesperrt; die Sperre verlängert sich bei weiteren Versuchen
   bis auf eine Stunde. Die Fehlermeldung verrät dabei nicht, ob es die E-Mail-Adresse gibt.
 - Gespeicherte API-Keys und Knoten-Zugangsdaten werden mit AES-256-GCM verschlüsselt abgelegt.
-- Benachrichtigungs-E-Mails und das OpenAPI-Dokument liegen bislang nur auf Deutsch vor.

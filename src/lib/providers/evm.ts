@@ -1,20 +1,30 @@
 import { fetchJson } from "./http";
 import { ProviderError } from "./types";
 import type { AddressInfo, ChainProvider, ProviderContext, TxInfo, TxInput, TxOutput } from "./types";
-import type { ChainId } from "../chains";
+import { BLOCKSCOUT_CHAINS, EVM_CHAINS, chainMeta, type ChainId } from "../chains";
 
 /**
- * Ethereum-Unterstützung über die UTXO-artige Provider-Abstraktion.
+ * Unterstützung der EVM-Ketten über die UTXO-artige Provider-Abstraktion.
  *
  * Eine EVM-Transaktion hat genau einen Absender und einen Empfänger; sie wird
  * deshalb als TxInfo mit `inputs = [Absender]` und `outputs = [Empfänger, …]`
  * abgebildet. Token-Transfers und interne Transfers erscheinen als zusätzliche
  * Outputs, damit Trace-Engine und Graph unverändert weiterarbeiten können.
  *
- * Alle Beträge werden in Wei geführt (kleinste Einheit, CHAINS.ethereum.decimals = 18).
+ * Alle EVM-Ketten teilen sich diese Abbildung und beide Datenquellen; welche
+ * Kette gemeint ist, steht in `ctx.chain`. Die kettenabhängigen Angaben —
+ * Etherscan-Kennung und Blockscout-Instanz — stehen bei der Chain-Definition
+ * in `src/lib/chains.ts`, sodass eine weitere Kette nur dort einzutragen ist.
+ *
+ * Alle Beträge werden in Wei geführt (kleinste Einheit, 18 Nachkommastellen).
  */
 
-const CHAIN: ChainId = "ethereum";
+/** Kettenabhängige Angaben; wirft, wenn die Kette keine EVM-Kette ist. */
+function evmMeta(chain: ChainId): { chainId: number; blockscoutBase?: string } {
+  const meta = chainMeta(chain).evm;
+  if (!meta) throw new ProviderError("evm", `${chain} ist keine EVM-Kette`);
+  return meta;
+}
 
 /* ------------------------------------------------------------------ */
 /* Kleine, defensive Helfer für unbekannte API-Antworten               */
@@ -131,6 +141,7 @@ interface EvmInternalTransfer {
  */
 function buildTxInfo(
   provider: string,
+  chain: ChainId,
   core: EvmTxCore,
   tokens: EvmTokenTransfer[] = [],
   internals: EvmInternalTransfer[] = [],
@@ -177,7 +188,7 @@ function buildTxInfo(
 
   return {
     txid: core.hash,
-    chain: CHAIN,
+    chain,
     blockHeight: core.blockHeight,
     blockTime: core.blockTime,
     confirmed: core.blockHeight !== undefined,
@@ -208,9 +219,14 @@ function sumFlows(address: string, txs: TxInfo[]): { receivedSat: number; sentSa
 const BS_ID = "blockscout";
 const BS_DEFAULT_BASE = "https://eth.blockscout.com/api/v2";
 
+/**
+ * Basis-URL der Blockscout-Instanz. Eine eigene Konfiguration gilt für alle
+ * Ketten; ohne sie entscheidet die Kette.
+ */
 function bsBase(ctx: ProviderContext): string {
   const cfg = ctx.config?.[BS_ID]?.baseUrl;
-  const base = str(cfg) || str(process.env.BLOCKSCOUT_BASE_URL) || BS_DEFAULT_BASE;
+  const base = str(cfg) || str(process.env.BLOCKSCOUT_BASE_URL) || evmMeta(ctx.chain).blockscoutBase;
+  if (!base) throw new ProviderError(BS_ID, `keine Blockscout-Instanz für ${ctx.chain}`);
   return base.replace(/\/+$/, "");
 }
 
@@ -311,7 +327,7 @@ export const blockscout: ChainProvider = {
   url: "https://eth.blockscout.com",
   keyRequirement: "none",
   rateLimit: "Fair use, ohne Key",
-  chains: [CHAIN],
+  chains: BLOCKSCOUT_CHAINS,
   leaksQuery: true,
   configFields: [{ key: "baseUrl", label: "Basis-URL der API", placeholder: BS_DEFAULT_BASE }],
 
@@ -345,7 +361,7 @@ export const blockscout: ChainProvider = {
       // bewusst ignoriert: Salden bleiben 0, die Balance stimmt trotzdem.
     }
 
-    return { address: addr, chain: CHAIN, balanceSat, receivedSat, sentSat, txCount, provider: BS_ID };
+    return { address: addr, chain: ctx.chain, balanceSat, receivedSat, sentSat, txCount, provider: BS_ID };
   },
 
   async getAddressTxs(address, ctx, limit = 50): Promise<TxInfo[]> {
@@ -378,7 +394,7 @@ export const blockscout: ChainProvider = {
       // Token-Transfers sind optional; ohne sie bleiben die nativen Transfers.
     }
 
-    return cores.map((c) => buildTxInfo(BS_ID, c, tokensByTx.get(c.hash.toLowerCase()) ?? []));
+    return cores.map((c) => buildTxInfo(BS_ID, ctx.chain, c, tokensByTx.get(c.hash.toLowerCase()) ?? []));
   },
 
   async getTx(txid, ctx): Promise<TxInfo> {
@@ -409,7 +425,7 @@ export const blockscout: ChainProvider = {
       // interne Transfers sind optional
     }
 
-    return buildTxInfo(BS_ID, core, tokens, internals);
+    return buildTxInfo(BS_ID, ctx.chain, core, tokens, internals);
   },
   // getOutspends bleibt bewusst unimplementiert: EVM kennt keine UTXOs.
 };
@@ -420,12 +436,14 @@ export const blockscout: ChainProvider = {
 
 const ES_ID = "etherscan";
 const ES_BASE = "https://api.etherscan.io/v2/api";
-const ES_CHAIN_ID = "1";
-
+/**
+ * Etherscan V2 bedient alle Ketten über denselben Endpunkt; die Kette steht im
+ * Parameter `chainid`. Ein Key gilt damit für alle unterstützten Ketten.
+ */
 function esUrl(ctx: ProviderContext, params: Record<string, string>): string {
   const key = ctx.keys[ES_ID];
   if (!key) throw new ProviderError(ES_ID, "API-Key fehlt");
-  const q = new URLSearchParams({ chainid: ES_CHAIN_ID, ...params, apikey: key });
+  const q = new URLSearchParams({ chainid: String(evmMeta(ctx.chain).chainId), ...params, apikey: key });
   return `${ES_BASE}?${q.toString()}`;
 }
 
@@ -516,7 +534,7 @@ export const etherscan: ChainProvider = {
   keyRequirement: "required",
   keyHint: "Kostenloser API-Key: https://etherscan.io/myapikey",
   rateLimit: "Free-Tier: 5 Req/s, 100.000 Req/Tag",
-  chains: [CHAIN],
+  chains: EVM_CHAINS,
   leaksQuery: true,
 
   async getAddress(address, ctx): Promise<AddressInfo> {
@@ -546,7 +564,7 @@ export const etherscan: ChainProvider = {
       // Salden bleiben 0
     }
 
-    return { address: addr, chain: CHAIN, balanceSat, receivedSat, sentSat, txCount, provider: ES_ID, nonce };
+    return { address: addr, chain: ctx.chain, balanceSat, receivedSat, sentSat, txCount, provider: ES_ID, nonce };
   },
 
   async getAddressTxs(address, ctx, limit = 50): Promise<TxInfo[]> {
@@ -587,7 +605,7 @@ export const etherscan: ChainProvider = {
     return [...cores.values()]
       .sort((a, b) => (b.blockTime ?? 0) - (a.blockTime ?? 0) || (b.blockHeight ?? 0) - (a.blockHeight ?? 0))
       .slice(0, limit)
-      .map((c) => buildTxInfo(ES_ID, c, tokensByTx.get(c.hash.toLowerCase()) ?? []));
+      .map((c) => buildTxInfo(ES_ID, ctx.chain, c, tokensByTx.get(c.hash.toLowerCase()) ?? []));
   },
 
   async getTx(txid, ctx): Promise<TxInfo> {
@@ -644,7 +662,7 @@ export const etherscan: ChainProvider = {
       failed: failed || undefined,
       contractCreated: to ? undefined : contractCreated,
     };
-    return buildTxInfo(ES_ID, core);
+    return buildTxInfo(ES_ID, ctx.chain, core);
   },
   // getOutspends bleibt bewusst unimplementiert: EVM kennt keine UTXOs.
 };

@@ -29,6 +29,14 @@ export default function LocaleSwitcher({ locale }: { locale: Locale }) {
   function change(next: Locale) {
     if (next === locale) return;
     document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax`;
+    // Zusätzlich am Konto vermerken, damit auch Benachrichtigungen aus dem
+    // Hintergrund in dieser Sprache kommen. Ohne Anmeldung antwortet die Route
+    // mit 401; das ist hier kein Fehlerfall.
+    void fetch("/api/settings/keys", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locale: next }),
+    }).catch(() => {});
     startTransition(() => router.refresh());
   }
 

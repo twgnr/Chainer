@@ -6,6 +6,7 @@ import { categoryText } from "@/lib/trace/risk";
 import type { InflowRisk } from "@/lib/trace/inflow";
 import type { ChainId } from "@/lib/chains";
 import { useFormatters, useLocale, useT } from "@/lib/i18n/provider";
+import { translateHint } from "@/lib/i18n/hints";
 
 const TXT = {
   en: {
@@ -109,7 +110,7 @@ export default function InflowRiskBanner({
                 <span
                   className={`rounded px-1.5 py-0.5 text-xs ${s.verdict.severity === "high" ? "bg-red-700 text-white" : "bg-orange-600 text-white"}`}
                 >
-                  {s.verdict.label}
+                  {translateHint(s.verdict.label, locale)}
                 </span>
                 <span className="ml-1 text-xs text-muted">{categoryText(s.verdict.category, locale)}</span>
               </td>

@@ -19,7 +19,7 @@ import { shortHash, type Formatters } from "@/lib/format";
 import type { ChainId } from "@/lib/chains";
 import { useFormatters, useLocale, useResolvedTheme, useT } from "@/lib/i18n/provider";
 import type { Locale } from "@/lib/i18n/locale";
-import { translateHints } from "@/lib/i18n/hints";
+import { translateHint, translateHints } from "@/lib/i18n/hints";
 
 /* ---------------- Ansichtszustand (im Fall speicherbar) ---------------- */
 
@@ -297,6 +297,7 @@ function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
   const { opts, selectedId, neighbors, comments } = useContext(AppearanceCtx);
   const t = useT(TXT);
   const fmt = useFormatters();
+  const locale = useLocale();
   const dim = selectedId !== null && !neighbors.has(id);
   const selected = selectedId === id;
   const main = data.labels.find(
@@ -337,7 +338,7 @@ function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
       {main && (
         <div className={`truncate text-[10px] font-medium ${main.own ? "text-green-200" : "text-brand"}`}>
           {main.own ? "✎ " : ""}
-          {main.label}
+          {translateHint(main.label, locale)}
         </div>
       )}
       {data.isRiskSource && (
@@ -542,14 +543,13 @@ function addressAria(d: AddressNodeData, t: Texts, fmt: Formatters, locale: Loca
   if (d.isStart) parts.push(t.ariaStartNode);
   if (d.isRiskSource) parts.push(t.ariaHarmful);
   const main = d.labels.find((l) => l.own || (l.category !== "wallet" && l.category !== "other"));
-  if (main) parts.push(t.ariaLabel(main.label));
+  if (main) parts.push(t.ariaLabel(translateHint(main.label, locale)));
   parts.push(t.ariaReceived(fmt.amount(d.receivedSat, d.chain, 4)));
   parts.push(t.ariaSent(fmt.amount(d.sentSat, d.chain, 4)));
   if ((d.riskFromRatio ?? 0) > 0.001) parts.push(t.ariaRiskShare(fmt.percent(d.riskFromRatio || 0, 0)));
   if ((d.taintRatio ?? 0) > 0.001) parts.push(t.ariaTaintShare(fmt.percent(d.taintRatio || 0, 0)));
   if (d.clusterId) parts.push(t.ariaCluster(d.clusterId));
   parts.push(t.ariaDepth(d.depth));
-  void locale;
   return parts.join(", ");
 }
 

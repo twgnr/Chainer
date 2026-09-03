@@ -421,7 +421,9 @@ export default function PathView({
                   <span className="font-semibold text-red-300">
                     &#9888; {t.riskOnPaths(result.graph.riskSources.length)}
                   </span>{" "}
-                  {result.graph.riskSources.map((r) => `${r.label} (${categoryText(r.category, locale)})`).join(", ")}
+                  {result.graph.riskSources
+                    .map((r) => `${translateHint(r.label, locale)} (${categoryText(r.category, locale)})`)
+                    .join(", ")}
                 </div>
               )}
 

@@ -5,7 +5,8 @@ import { useMemo, useState } from "react";
 import type { AddressNodeData, TraceNode, TraceResult, TxNodeData } from "@/lib/trace/types";
 import { shortHash } from "@/lib/format";
 import { clusterColor } from "./TraceGraph";
-import { useFormatters, useT } from "@/lib/i18n/provider";
+import { useFormatters, useLocale, useT } from "@/lib/i18n/provider";
+import { translateHint, translateHints } from "@/lib/i18n/hints";
 
 const TXT = {
   en: {
@@ -121,6 +122,7 @@ export default function TraceTimeline({
 }) {
   const t = useT(TXT);
   const fmt = useFormatters();
+  const locale = useLocale();
   const chain = result.params.chain;
   const [filter, setFilter] = useState("");
   const [onlyFlagged, setOnlyFlagged] = useState(false);
@@ -191,8 +193,11 @@ export default function TraceTimeline({
           </Link>
         )}
         {label && (
-          <span className={`truncate text-[10px] ${label.own ? "text-green-300" : "text-brand"}`} title={label.label}>
-            {label.label}
+          <span
+            className={`truncate text-[10px] ${label.own ? "text-green-300" : "text-brand"}`}
+            title={translateHint(label.label, locale)}
+          >
+            {translateHint(label.label, locale)}
           </span>
         )}
         {d?.isRiskSource && (
@@ -337,7 +342,7 @@ export default function TraceTimeline({
                   {r.tx.carriesRisk && (
                     <div className="font-semibold text-red-400">&#9888; {t.carriesRisk}</div>
                   )}
-                  {r.tx.hints.map((h, i) => (
+                  {translateHints(r.tx.hints, locale).map((h, i) => (
                     <div key={i}>⚑ {h}</div>
                   ))}
                 </td>

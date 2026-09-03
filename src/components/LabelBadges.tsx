@@ -1,7 +1,8 @@
 "use client";
 
 import type { AddressLabel } from "@/lib/providers/types";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
+import { translateHint } from "@/lib/i18n/hints";
 
 const colors: Record<string, string> = {
   sanctioned: "bg-red-600 text-white",
@@ -27,6 +28,7 @@ const TXT = {
 
 export default function LabelBadges({ labels, compact = false }: { labels: AddressLabel[]; compact?: boolean }) {
   const t = useT(TXT);
+  const locale = useLocale();
   if (!labels.length) return compact ? null : <span className="text-xs text-subtle">{t.noLabels}</span>;
   // Eigene Labels zuerst, danach die riskantesten
   const order = { high: 0, medium: 1, low: 2, undefined: 3 } as Record<string, number>;
@@ -40,10 +42,10 @@ export default function LabelBadges({ labels, compact = false }: { labels: Addre
         const content = (
           <span
             className={`rounded px-1.5 py-0.5 text-xs ${cls} ${l.own ? "ring-1 ring-green-300" : ""}`}
-            title={`${l.source}${l.details ? ": " + l.details : ""}`}
+            title={`${l.source}${l.details ? ": " + translateHint(l.details, locale) : ""}`}
           >
             {l.own ? "✎ " : ""}
-            {l.label}
+            {translateHint(l.label, locale)}
             {!compact && <span className="ml-1 opacity-70">· {l.source}</span>}
           </span>
         );

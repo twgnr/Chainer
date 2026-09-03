@@ -7,6 +7,8 @@ import { PasswordReset, RESET_TTL_MS } from "@/lib/models/PasswordReset";
 import { notify, notifyChannelsAvailable } from "@/lib/notify";
 import { guard } from "@/lib/ratelimit";
 import { errMsg, jsonError } from "@/lib/api";
+import { getLocale } from "@/lib/i18n/server";
+import { AUTH_MAIL } from "@/lib/i18n/notify";
 
 const schema = z.object({ email: z.string().email() });
 
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
       await notify(
         { email: user.email, telegramChatId: user.notify?.telegramChatId || undefined },
         {
-          subject: "Chainer: Passwort zurücksetzen",
+          subject: AUTH_MAIL[await getLocale()].resetSubject,
           text: "Mit diesem Link kannst du ein neues Passwort setzen. Er gilt eine Stunde und nur einmal. Warst du das nicht, ignoriere diese Nachricht.",
           url: `${appUrl()}/reset/${token}`,
         },

@@ -1,0 +1,47 @@
+name: CI
+
+# Läuft bei jedem Push und jedem Pull Request auf den Hauptzweig.
+# Alle vier Schritte sind dieselben, die auch lokal über `npm run check` laufen.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+# Ein neuer Push auf denselben Zweig löst den vorherigen Lauf ab.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Typen prüfen
+        run: npx tsc --noEmit
+
+      - name: Stil prüfen
+        run: npx eslint src
+
+      - name: Tests
+        run: npm test
+
+      # Der Build deckt ab, was die Tests nicht sehen: Server-Komponenten,
+      # Metadaten und das Zusammenspiel der Seiten.
+      - name: Produktionsbuild
+        run: npm run build
+        env:
+          # Kein Zugriff auf eine Datenbank im Build; der Gastmodus genügt.
+          NEXT_TELEMETRY_DISABLED: "1"

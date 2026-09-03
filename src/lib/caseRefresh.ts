@@ -5,6 +5,8 @@ import { contextForUser } from "./auth";
 import { runTrace } from "./trace/engine";
 import { traceParamsSchema } from "./trace/params";
 import { notify } from "./notify";
+import { toLocale } from "./i18n/locale";
+import { CASE_TEXT } from "./i18n/notify";
 import { formatAmount, shortHash } from "./format";
 import { isChainId, type ChainId } from "./chains";
 import type { TraceResult } from "./trace/types";
@@ -106,16 +108,21 @@ export async function refreshCases(opts: { caseId?: string; userId?: string; lim
       c.lastRefreshAt = new Date();
       if (diff.changed) {
         out.changed++;
+        // Der Fall gehört einem Konto; dessen Sprache bestimmt Protokoll und
+        // Benachrichtigung.
+        const user = await User.findById(c.userId).lean();
+        const locale = toLocale(user?.locale);
+        const t = CASE_TEXT[locale];
         const parts = [
-          diff.newTxs.length ? `${diff.newTxs.length} neue Transaktion(en)` : null,
-          diff.newAddresses.length ? `${diff.newAddresses.length} neue Adresse(n)` : null,
-          diff.newRiskSources.length ? `${diff.newRiskSources.length} neue schädliche Adresse(n)` : null,
+          diff.newTxs.length ? t.newTxs(diff.newTxs.length) : null,
+          diff.newAddresses.length ? t.newAddresses(diff.newAddresses.length) : null,
+          diff.newRiskSources.length ? t.newRiskSources(diff.newRiskSources.length) : null,
         ].filter(Boolean);
-        const text = `Automatische Aktualisierung: ${parts.join(", ")}.`;
-        c.log.push({ at: new Date(), author: "System", text });
+        const text = t.logEntry(parts.join(", "));
+        c.log.push({ at: new Date(), author: t.systemAuthor, text });
         c.traces.push({
           id: `auto-${Date.now()}`,
-          name: `Aktualisierung ${new Date().toLocaleDateString("de-DE")}`,
+          name: t.traceName(new Date().toLocaleDateString(locale === "de" ? "de-DE" : "en-GB")),
           start: parsed.data.start,
           chain,
           params: parsed.data,
@@ -125,7 +132,6 @@ export async function refreshCases(opts: { caseId?: string; userId?: string; lim
         // Nur die letzten zehn automatischen Läufe behalten
         if (c.traces.length > 10) c.set("traces", c.traces.slice(-10));
 
-        const user = await User.findById(c.userId).lean();
         if (user) {
           const results = await notify(
             {
@@ -134,19 +140,22 @@ export async function refreshCases(opts: { caseId?: string; userId?: string; lim
               webhookUrl: user.notify?.webhookUrl || undefined,
             },
             {
-              subject: `Chainer: Bewegung im Fall ${c.name}`,
+              subject: t.subject(c.name),
               text:
                 `${text}\n` +
                 (diff.newRiskSources.length
-                  ? `Neue schädliche Adressen: ${diff.newRiskSources.slice(0, 3).map((a) => shortHash(a, 8)).join(", ")}\n`
+                  ? t.riskLine(diff.newRiskSources.slice(0, 3).map((a) => shortHash(a, 8)).join(", "))
                   : "") +
-                `Volumen im Graph: ${formatAmount(
-                  result.nodes
-                    .filter((n) => n.data.type === "tx")
-                    .reduce((s, n) => s + (n.data as { totalOutSat: number }).totalOutSat, 0),
-                  chain,
-                  4,
-                )}`,
+                t.volume(
+                  formatAmount(
+                    result.nodes
+                      .filter((n) => n.data.type === "tx")
+                      .reduce((s, n) => s + (n.data as { totalOutSat: number }).totalOutSat, 0),
+                    chain,
+                    4,
+                    locale,
+                  ),
+                ),
               url: appUrl(`/cases/${String(c._id)}`),
             },
           );

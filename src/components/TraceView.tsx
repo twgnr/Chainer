@@ -878,7 +878,7 @@ export default function TraceView({
                     className={`rounded px-1.5 py-0.5 text-xs ${r.severity === "high" ? "bg-red-700 text-white" : "bg-orange-600 text-white"}`}
                     title={t.sourceTitle(r.address, r.source)}
                   >
-                    {r.label} ({categoryText(r.category, locale)})
+                    {translateHint(r.label, locale)} ({categoryText(r.category, locale)})
                   </span>
                 ))}
                 {result.riskSources.length > 6 && (
@@ -1609,7 +1609,7 @@ function RiskPanel({
                   <span
                     className={`rounded px-1.5 py-0.5 text-xs ${r.severity === "high" ? "bg-red-700 text-white" : "bg-orange-600 text-white"}`}
                   >
-                    {r.label}
+                    {translateHint(r.label, locale)}
                   </span>
                     <span className="ml-1 text-xs text-muted">{categoryText(r.category, locale)}</span>
                 </td>

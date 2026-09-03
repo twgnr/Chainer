@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { CHAIN_LIST } from "@/lib/chains";
 import { RULES } from "@/lib/ratelimit";
+import { getLocale } from "@/lib/i18n/server";
+import { translateOpenApi } from "@/lib/i18n/openapi";
 
 /**
  * Maschinenlesbare Schnittstellenbeschreibung nach OpenAPI 3.1.
@@ -578,7 +580,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const server = `${url.protocol}//${url.host}`;
   const limits = Object.entries(RULES)
-    .map(([name, r]) => `${name}: ${r.limit} je ${Math.round(r.windowMs / 1000)} s`)
+    .map(([name, r]) => `${name}: ${r.limit}/${Math.round(r.windowMs / 1000)} s`)
     .join(", ");
 
   const doc = {
@@ -640,5 +642,8 @@ export async function GET(req: Request) {
     paths: bauePfade(await jobsVorhanden()),
   };
 
-  return NextResponse.json(doc, { headers: { "Cache-Control": "public, max-age=300" } });
+  // Das Dokument entsteht auf Deutsch und wird beim Ausliefern übersetzt.
+  return NextResponse.json(translateOpenApi(doc, await getLocale()), {
+    headers: { "Cache-Control": "public, max-age=300", Vary: "Cookie, Accept-Language" },
+  });
 }

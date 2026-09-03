@@ -779,7 +779,7 @@ function TraceSection({
                   <tr key={rs.address} className="border-t border-border print:border-muted">
                     <td className="mono py-1 text-xs">{rs.address}</td>
                     <td>
-                      {rs.label} ({rs.category ? categoryText(rs.category, locale) : t.suspicious})
+                      {translateHint(rs.label, locale)} ({rs.category ? categoryText(rs.category, locale) : t.suspicious})
                     </td>
                     <td className="text-xs">{rs.source}</td>
                     <td className="text-right">{fmt.amount(rs.outflowSat, chain, 5)}</td>
@@ -844,7 +844,7 @@ function TraceSection({
                     </td>
                     <td className="py-1 text-xs">
                       {(n.data.labels ?? []).length
-                        ? n.data.labels.map((l) => `${l.source}: ${l.label}`).join("; ")
+                        ? n.data.labels.map((l) => `${l.source}: ${translateHint(l.label, locale)}`).join("; ")
                         : "–"}
                     </td>
                     <td className="py-1">{t.risk[n.data.risk] ?? n.data.risk}</td>

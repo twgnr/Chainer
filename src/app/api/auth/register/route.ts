@@ -7,6 +7,8 @@ import { Org } from "@/lib/models/Org";
 import { createSession, hashPassword, sessionMetaFromRequest } from "@/lib/auth";
 import { notify, notifyChannelsAvailable } from "@/lib/notify";
 import { errMsg, jsonError } from "@/lib/api";
+import { getLocale } from "@/lib/i18n/server";
+import { AUTH_MAIL } from "@/lib/i18n/notify";
 
 const schema = z.object({
   email: z.string().email(),
@@ -30,21 +32,26 @@ export async function POST(req: Request) {
 
     const mailKonfiguriert = notifyChannelsAvailable().email;
     const verifyToken = randomBytes(16).toString("hex");
+    // Die Sprache der Anmeldung gilt fortan auch für Benachrichtigungen, die
+    // später im Hintergrund entstehen.
+    const locale = await getLocale();
     const user = await User.create({
       email,
       name: parsed.data.name || "",
       passwordHash: await hashPassword(parsed.data.password),
       verifyTokenHash: createHash("sha256").update(verifyToken).digest("hex"),
       emailVerified: false,
+      locale,
     });
 
     // Bestätigungslink verschicken; die Anmeldung wird davon nicht blockiert
     if (mailKonfiguriert) {
+      const mail = AUTH_MAIL[locale];
       await notify(
         { email: user.email },
         {
-          subject: "Chainer: E-Mail bestätigen",
-          text: "Bitte bestätige deine E-Mail-Adresse mit diesem Link.",
+          subject: mail.verifySubject,
+          text: mail.verifyText,
           url: `${appUrl()}/api/auth/verify?token=${verifyToken}`,
         },
       ).catch(() => []);

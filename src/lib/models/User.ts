@@ -46,6 +46,13 @@ const UserSchema = new Schema(
     verifyTokenHash: { type: String, default: "" },
     /** Datenschutzmodus (Logik wird an anderer Stelle gebaut) */
     privacyMode: { type: Boolean, default: false },
+
+    /**
+     * Sprache der Oberfläche, mitgeschrieben beim Umschalten. Benachrichtigungen
+     * entstehen im Hintergrund, wo es weder Cookie noch Anfrage-Kopf gibt; sie
+     * lesen die Sprache deshalb hier ab.
+     */
+    locale: { type: String, enum: ["en", "de"], default: "en" },
   },
   { timestamps: true },
 );

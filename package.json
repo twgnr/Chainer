@@ -6,8 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
     "test": "vitest run",
+    "test:ui": "vitest run --project ansicht",
     "test:watch": "vitest",
     "fixtures": "node scripts/record-fixtures.mjs"
   },
@@ -25,6 +28,9 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/bcryptjs": "^2.4.6",
     "@types/dagre": "^0.7.54",
     "@types/node": "^20",
@@ -34,6 +40,7 @@
     "@vitest/ui": "^4.1.11",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11"

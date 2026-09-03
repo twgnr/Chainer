@@ -17,6 +17,10 @@ import { translateHint } from "@/lib/i18n/hints";
 
 export const dynamic = "force-dynamic";
 
+/** Schrittweite und Obergrenze der Transaktionsliste auf der Adressseite. */
+const TX_STEP = 50;
+const TX_MAX = 500;
+
 const TXT = {
   en: {
     heading: "Address",
@@ -34,7 +38,14 @@ const TXT = {
     furtherResearch: "Further research",
     explorer: (chain: string) => `${chain} explorer`,
     activityTitle: "Activity pattern",
-    txHeading: (count: number, provider: string) => `(${count} most recent, source: ${provider})`,
+    txHeading: (shown: number, total: number, provider: string) =>
+      total > shown
+        ? `(${shown} of ${total}, most recent first, source: ${provider})`
+        : `(${shown}, source: ${provider})`,
+    loadMore: (n: number) => `Load ${n} more`,
+    allLoaded: "All transactions of this address are shown.",
+    capReached: (max: number) =>
+      `Display limited to ${max} transactions. Use a trace to follow the money further.`,
     colTx: "Transaction",
     colTime: "Time",
     colDirection: "Direction",
@@ -61,7 +72,14 @@ const TXT = {
     furtherResearch: "Weitere Recherche",
     explorer: (chain: string) => `${chain}-Explorer`,
     activityTitle: "Aktivitätsmuster",
-    txHeading: (count: number, provider: string) => `(${count} neueste, Quelle: ${provider})`,
+    txHeading: (shown: number, total: number, provider: string) =>
+      total > shown
+        ? `(${shown} von ${total}, neueste zuerst, Quelle: ${provider})`
+        : `(${shown}, Quelle: ${provider})`,
+    loadMore: (n: number) => `${n} weitere laden`,
+    allLoaded: "Alle Transaktionen dieser Adresse werden angezeigt.",
+    capReached: (max: number) =>
+      `Anzeige auf ${max} Transaktionen begrenzt. Für die weitere Verfolgung einen Trace nutzen.`,
     colTx: "Transaktion",
     colTime: "Zeit",
     colDirection: "Richtung",
@@ -79,12 +97,16 @@ export default async function AddressPage({
   searchParams,
 }: {
   params: Promise<{ addr: string }>;
-  searchParams: Promise<{ chain?: string }>;
+  searchParams: Promise<{ chain?: string; limit?: string }>;
 }) {
   const { addr } = await params;
   const sp = await searchParams;
   const chain: ChainId = isChainId(sp.chain) ? sp.chain : DEFAULT_CHAIN;
   if (!isChainAddress(addr, chain)) notFound();
+  // Wie viele Transaktionen geladen werden. Die Seite lädt bei jedem Schritt
+  // neu; das entspricht dem serverseitigen Aufbau der übrigen Seiten und
+  // braucht keinen Zustand im Browser.
+  const limit = Math.min(Math.max(Number(sp.limit) || TX_STEP, TX_STEP), TX_MAX);
   const { ctx, session } = await getRequestContext({ chain });
   const meta = chainMeta(chain);
   const t = await getT(TXT);
@@ -93,7 +115,7 @@ export default async function AddressPage({
 
   const [info, txs, labels, price] = await Promise.all([
     getAddress(ctx, addr).catch((e: Error) => e),
-    getAddressTxs(ctx, addr, 50).catch((e: Error) => e),
+    getAddressTxs(ctx, addr, limit).catch((e: Error) => e),
     lookupLabels(ctx, addr).catch(() => ({ labels: [], errors: [] })),
     getBtcPrice(chain).catch(() => null),
   ]);
@@ -202,7 +224,9 @@ export default async function AddressPage({
 
       <div className="card overflow-x-auto">
         <h2 className="mb-2 font-semibold">
-          {t.transactions} {!(txs instanceof Error) && t.txHeading(txList.length, txs.provider)}
+          {t.transactions}{" "}
+          {!(txs instanceof Error) &&
+            t.txHeading(txList.length, info instanceof Error ? txList.length : info.data.txCount, txs.provider)}
         </h2>
         {txs instanceof Error ? (
           <p className="text-red-300">{translateHint(txs.message, locale)}</p>
@@ -264,7 +288,38 @@ export default async function AddressPage({
             </tbody>
           </table>
         )}
+        {!(txs instanceof Error) && <MoreTransactions addr={addr} chain={chain} limit={limit} shown={txList.length} t={t} />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Weiterblättern in der Transaktionsliste. Zeigt entweder den nächsten Schritt,
+ * den Hinweis auf die Obergrenze oder gar nichts, wenn alles geladen ist.
+ */
+function MoreTransactions({
+  addr,
+  chain,
+  limit,
+  shown,
+  t,
+}: {
+  addr: string;
+  chain: ChainId;
+  limit: number;
+  shown: number;
+  t: { loadMore: (n: number) => string; allLoaded: string; capReached: (max: number) => string };
+}) {
+  // Weniger geliefert als angefordert: die Quelle hat nichts mehr.
+  if (shown < limit) return <p className="mt-3 text-xs text-subtle">{t.allLoaded}</p>;
+  if (limit >= TX_MAX) return <p className="mt-3 text-xs text-subtle">{t.capReached(TX_MAX)}</p>;
+  const next = Math.min(limit + TX_STEP, TX_MAX);
+  return (
+    <div className="mt-3">
+      <Link className="btn-secondary" href={`/address/${addr}?chain=${chain}&limit=${next}`}>
+        {t.loadMore(next - limit)}
+      </Link>
     </div>
   );
 }

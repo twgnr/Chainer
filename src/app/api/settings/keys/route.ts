@@ -7,6 +7,7 @@ import { encrypt, maskKey } from "@/lib/crypto";
 import { envKeySet, keyableProviders } from "@/lib/providers/registry";
 import { keyRotationConfigured } from "@/lib/crypto";
 import { errMsg, jsonError } from "@/lib/api";
+import { LOCALES } from "@/lib/i18n/locale";
 
 /** Konfigurierbare Provider mit maskierten Nutzer-Keys und Konfiguration */
 export async function GET() {
@@ -46,6 +47,8 @@ const schema = z.object({
   config: z.record(z.string(), z.record(z.string(), z.string().max(500))).optional(),
   /** Nur Quellen nutzen, die die gesuchte Adresse nicht weitergeben */
   privacyMode: z.boolean().optional(),
+  /** Sprache der Oberfläche; gilt auch für Benachrichtigungen im Hintergrund */
+  locale: z.enum(LOCALES).optional(),
 });
 
 /**
@@ -87,6 +90,7 @@ export async function PUT(req: Request) {
     }
 
     if (parsed.data.privacyMode !== undefined) user.privacyMode = parsed.data.privacyMode;
+    if (parsed.data.locale !== undefined) user.locale = parsed.data.locale;
 
     await user.save();
     return NextResponse.json({ ok: true });
