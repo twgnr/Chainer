@@ -1,4 +1,5 @@
 import type { AddressLabel, LabelCategory } from "../providers/types";
+import { DEFAULT_LOCALE, type Locale } from "../i18n/locale";
 
 /**
  * Einstufung von Adressen als schädlich. Grundlage für die Herkunfts-Warnung:
@@ -21,16 +22,28 @@ export interface HarmfulVerdict {
   url?: string;
 }
 
-const CATEGORY_TEXT: Partial<Record<LabelCategory, string>> = {
-  sanctioned: "sanktioniert",
-  ransomware: "Ransomware",
-  scam: "Betrug",
-  darknet: "Darknet-Markt",
-  mixer: "Mixer",
+const CATEGORY_TEXT: Record<Locale, Partial<Record<LabelCategory, string>>> = {
+  en: {
+    sanctioned: "sanctioned",
+    ransomware: "ransomware",
+    scam: "scam",
+    darknet: "darknet market",
+    mixer: "mixer",
+  },
+  de: {
+    sanctioned: "sanktioniert",
+    ransomware: "Ransomware",
+    scam: "Betrug",
+    darknet: "Darknet-Markt",
+    mixer: "Mixer",
+  },
 };
 
-export function categoryText(c?: string): string {
-  return (c && CATEGORY_TEXT[c as LabelCategory]) || c || "auffällig";
+/** Ersatztext, wenn die Kategorie unbekannt ist. */
+const CATEGORY_FALLBACK: Record<Locale, string> = { en: "suspicious", de: "auffällig" };
+
+export function categoryText(c?: string, locale: Locale = DEFAULT_LOCALE): string {
+  return (c && CATEGORY_TEXT[locale][c as LabelCategory]) || c || CATEGORY_FALLBACK[locale];
 }
 
 /**

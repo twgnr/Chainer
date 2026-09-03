@@ -117,11 +117,21 @@ export function isChainId(v: unknown): v is ChainId {
 
 /* ---------------- Adress- und Hash-Erkennung pro Chain ---------------- */
 
+/**
+ * Zeichenvorrat des Datenteils einer Bech32-Adresse. „1“, „b“, „i“ und „o“
+ * fehlen darin absichtlich, weil sie zu leicht zu verwechseln sind. Ein
+ * weiter gefasstes Muster liesse offensichtlich falsche Adressen durch und
+ * schickte sie an sämtliche Datenquellen, statt sie sofort abzuweisen.
+ */
+const BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const bech32Re = (hrp: string) =>
+  new RegExp(`^(?:${hrp}1[${BECH32}]{25,87}|${hrp.toUpperCase()}1[${BECH32.toUpperCase()}]{25,87})$`);
+
 const RE = {
   btcLegacy: /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/,
-  btcBech32: /^bc1[a-zA-HJ-NP-Z0-9]{25,90}$/,
+  btcBech32: bech32Re("bc"),
   ltcLegacy: /^[LM3][a-km-zA-HJ-NP-Z1-9]{25,34}$/,
-  ltcBech32: /^ltc1[a-zA-HJ-NP-Z0-9]{25,90}$/,
+  ltcBech32: bech32Re("ltc"),
   doge: /^[DA9][a-km-zA-HJ-NP-Z1-9]{25,34}$/,
   bchCash: /^(bitcoincash:)?[qp][a-z0-9]{38,60}$/,
   bchLegacy: /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/,

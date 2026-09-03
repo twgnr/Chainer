@@ -3,9 +3,107 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { CHAIN_LIST, chainMeta, DEFAULT_CHAIN, type ChainId } from "@/lib/chains";
-import { formatAmount, shortHash } from "@/lib/format";
+import { shortHash } from "@/lib/format";
 import { categoryText } from "@/lib/trace/risk";
 import type { AddressLabel } from "@/lib/providers/types";
+import { useFormatters, useLocale, useT } from "@/lib/i18n/provider";
+import type { Locale } from "@/lib/i18n/locale";
+import { translateHint } from "@/lib/i18n/hints";
+
+const TXT = {
+  en: {
+    noAddressesInFile: "No addresses were found in the file.",
+    fileUnreadable: "The file could not be read",
+    checkFailedHttp: (status: number) => `The check failed (HTTP ${status})`,
+    checkFailed: "The check failed",
+    invalidWithReason: (reason: string) => `invalid: ${reason}`,
+    invalid: "invalid",
+    errorWith: (error: string) => `Error: ${error}`,
+    checked: "checked",
+    csvHead: ["Address", "Chain", "Classification", "Category", "Source", "Labels", "Balance", "Status"],
+    high: "high",
+    medium: "medium",
+    clean: "unremarkable",
+    addressesLabel: "Addresses (one per line; commas and semicolons also separate)",
+    fileUpload: "Upload a file (.txt / .csv)",
+    chain: "Chain",
+    includeMedium: "Include mixers and medium risk",
+    withBalance: "Load balances (slower)",
+    running: "Check running …",
+    check: "Check",
+    clear: "Clear",
+    detected: (n: number) => `${n} address${n === 1 ? "" : "es"} detected`,
+    tooMany: (max: number) => ` – at most ${max} per check`,
+    guestHint: "Guest mode: your own labels and personal API keys only apply once you are signed in.",
+    progress: (n: number) =>
+      `${n} addresses are being checked against every source. The result appears only at the end – depending on the number this can take a few minutes. Please keep the page open.`,
+    entries: (n: number) => `${n} entries`,
+    flagged: (n: number) => `${n} reported`,
+    ofWhich: (high: number, medium: number) => `of which ${high} high / ${medium} medium`,
+    invalidCount: (n: number) => `${n} invalid`,
+    errorCount: (n: number) => `${n} errors`,
+    duration: (s: string) => `Duration ${s} s`,
+    exportCsv: "Export CSV",
+    onlyFlagged: "show reported only",
+    searchPlaceholder: "Search for an address or label …",
+    visibleOf: (shown: number, total: number) => `${shown} of ${total} visible`,
+    colAddress: "Address",
+    colVerdict: "Classification",
+    colCategory: "Category",
+    colSource: "Source",
+    colLabels: "Labels",
+    colBalance: "Balance",
+    colStatus: "Status",
+    noLabels: "none",
+    noRows: "No entries for these filters.",
+  },
+  de: {
+    noAddressesInFile: "In der Datei wurden keine Adressen gefunden.",
+    fileUnreadable: "Datei konnte nicht gelesen werden",
+    checkFailedHttp: (status: number) => `Prüfung fehlgeschlagen (HTTP ${status})`,
+    checkFailed: "Prüfung fehlgeschlagen",
+    invalidWithReason: (reason: string) => `ungültig: ${reason}`,
+    invalid: "ungültig",
+    errorWith: (error: string) => `Fehler: ${error}`,
+    checked: "geprüft",
+    csvHead: ["Adresse", "Chain", "Einstufung", "Kategorie", "Quelle", "Labels", "Saldo", "Status"],
+    high: "hoch",
+    medium: "mittel",
+    clean: "unauffällig",
+    addressesLabel: "Adressen (eine pro Zeile; Komma und Semikolon gelten ebenfalls als Trenner)",
+    fileUpload: "Datei hochladen (.txt / .csv)",
+    chain: "Chain",
+    includeMedium: "Mixer und mittleres Risiko einbeziehen",
+    withBalance: "Salden laden (langsamer)",
+    running: "Prüfung läuft …",
+    check: "Prüfen",
+    clear: "Leeren",
+    detected: (n: number) => `${n} Adresse${n === 1 ? "" : "n"} erkannt`,
+    tooMany: (max: number) => ` – höchstens ${max} pro Prüfung`,
+    guestHint: "Gastmodus: eigene Labels und persönliche API-Keys fließen erst nach dem Login ein.",
+    progress: (n: number) =>
+      `${n} Adressen werden gegen alle Quellen geprüft. Das Ergebnis erscheint erst am Ende – je nach Anzahl kann das einige Minuten dauern. Bitte die Seite so lange geöffnet lassen.`,
+    entries: (n: number) => `${n} Einträge`,
+    flagged: (n: number) => `${n} gemeldet`,
+    ofWhich: (high: number, medium: number) => `davon ${high} hoch / ${medium} mittel`,
+    invalidCount: (n: number) => `${n} ungültig`,
+    errorCount: (n: number) => `${n} Fehler`,
+    duration: (s: string) => `Dauer ${s} s`,
+    exportCsv: "CSV exportieren",
+    onlyFlagged: "nur gemeldete zeigen",
+    searchPlaceholder: "Adresse oder Label suchen …",
+    visibleOf: (shown: number, total: number) => `${shown} von ${total} sichtbar`,
+    colAddress: "Adresse",
+    colVerdict: "Einstufung",
+    colCategory: "Kategorie",
+    colSource: "Quelle",
+    colLabels: "Labels",
+    colBalance: "Saldo",
+    colStatus: "Status",
+    noLabels: "keine",
+    noRows: "Keine Einträge für diese Filter.",
+  },
+};
 
 /* --------------------------------- Typen --------------------------------- */
 
@@ -106,15 +204,18 @@ function csvField(v: string | undefined): string {
 }
 
 /** Kurztext für die Statusspalte und den Export */
-function statusText(r: ScreenResult): string {
-  if (!r.valid) return r.reason ? `ungültig: ${r.reason}` : "ungültig";
-  if (r.error) return `Fehler: ${r.error}`;
-  return "geprüft";
+function statusText(r: ScreenResult, t: (typeof TXT)[Locale], locale: Locale): string {
+  if (!r.valid) return r.reason ? t.invalidWithReason(translateHint(r.reason, locale)) : t.invalid;
+  if (r.error) return t.errorWith(r.error);
+  return t.checked;
 }
 
 /* ------------------------------- Komponente ------------------------------ */
 
 export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
+  const t = useT(TXT);
+  const locale = useLocale();
+  const fmt = useFormatters();
   const [text, setText] = useState("");
   const [chain, setChain] = useState<ChainId>(DEFAULT_CHAIN);
   const [includeMedium, setIncludeMedium] = useState(false);
@@ -139,9 +240,9 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
     try {
       const rows = parseFile(await file.text());
       setText(rows.join("\n"));
-      setErr(rows.length ? null : "In der Datei wurden keine Adressen gefunden.");
+      setErr(rows.length ? null : t.noAddressesInFile);
     } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : "Datei konnte nicht gelesen werden");
+      setErr(e2 instanceof Error ? e2.message : t.fileUnreadable);
     } finally {
       if (fileRef.current) fileRef.current.value = "";
     }
@@ -161,13 +262,13 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
       });
       const json = (await res.json()) as ScreenResponse;
       if (!res.ok || json.error) {
-        setErr(json.error || `Prüfung fehlgeschlagen (HTTP ${res.status})`);
+        setErr(json.error || t.checkFailedHttp(res.status));
       } else {
         setData(json);
         setShownBalance(withBalance);
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Prüfung fehlgeschlagen");
+      setErr(e instanceof Error ? e.message : t.checkFailed);
     } finally {
       setBusy(false);
     }
@@ -189,19 +290,19 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
 
   function exportCsv() {
     if (!data) return;
-    const head = ["Adresse", "Chain", "Einstufung", "Kategorie", "Quelle", "Labels", "Saldo", "Status"];
+    const head = t.csvHead;
     const lines = [head.join(";")];
     for (const r of visible) {
       lines.push(
         [
           csvField(r.address),
           csvField(chainMeta(data.chain).name),
-          csvField(r.verdict ? (r.verdict.severity === "high" ? "hoch" : "mittel") : r.valid ? "unauffällig" : ""),
-          csvField(r.verdict ? categoryText(r.verdict.category) : ""),
+          csvField(r.verdict ? (r.verdict.severity === "high" ? t.high : t.medium) : r.valid ? t.clean : ""),
+          csvField(r.verdict ? categoryText(r.verdict.category, locale) : ""),
           csvField(r.verdict?.source ?? ""),
           csvField(r.labels.map((l) => `${l.label} (${l.source})`).join(" | ")),
-          csvField(r.balanceSat === undefined ? "" : formatAmount(r.balanceSat, data.chain)),
-          csvField(statusText(r)),
+          csvField(r.balanceSat === undefined ? "" : fmt.amount(r.balanceSat, data.chain)),
+          csvField(statusText(r, t, locale)),
         ].join(";"),
       );
     }
@@ -221,7 +322,7 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
       <div className="card space-y-3">
         <div>
           <label className="label" htmlFor="screen-addresses">
-            Adressen (eine pro Zeile; Komma und Semikolon gelten ebenfalls als Trenner)
+            {t.addressesLabel}
           </label>
           <textarea
             id="screen-addresses"
@@ -236,7 +337,7 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="label" htmlFor="screen-chain">
-              Chain
+              {t.chain}
             </label>
             <select
               id="screen-chain"
@@ -255,7 +356,7 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
 
           <div>
             <label className="label" htmlFor="screen-file">
-              Datei hochladen (.txt / .csv)
+              {t.fileUpload}
             </label>
             <input
               id="screen-file"
@@ -264,7 +365,7 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
               accept=".txt,.csv,text/plain,text/csv"
               onChange={onFile}
               disabled={busy}
-              className="text-sm text-gray-300 file:mr-3 file:rounded-md file:border file:border-border file:bg-transparent file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+              className="text-sm text-fg-2 file:mr-3 file:rounded-md file:border file:border-border file:bg-transparent file:px-3 file:py-1.5 file:text-sm file:text-foreground"
             />
           </div>
 
@@ -275,7 +376,7 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
               onChange={(e) => setIncludeMedium(e.target.checked)}
               disabled={busy}
             />
-            Mixer und mittleres Risiko einbeziehen
+            {t.includeMedium}
           </label>
 
           <label className="flex items-center gap-2 text-sm">
@@ -285,34 +386,32 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
               onChange={(e) => setWithBalance(e.target.checked)}
               disabled={busy}
             />
-            Salden laden (langsamer)
+            {t.withBalance}
           </label>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <button className="btn" onClick={run} disabled={busy || !addresses.length || tooMany}>
-            {busy ? "Prüfung läuft …" : "Prüfen"}
+            {busy ? t.running : t.check}
           </button>
           <button className="btn-secondary" onClick={() => setText("")} disabled={busy || !text}>
-            Leeren
+            {t.clear}
           </button>
-          <span className={`text-sm ${tooMany ? "text-red-400" : "text-gray-400"}`}>
-            {addresses.length} Adresse{addresses.length === 1 ? "" : "n"} erkannt
-            {tooMany ? ` – höchstens ${MAX_ADDRESSES} pro Prüfung` : ""}
+          <span className={`text-sm ${tooMany ? "text-red-400" : "text-muted"}`}>
+            {t.detected(addresses.length)}
+            {tooMany ? t.tooMany(MAX_ADDRESSES) : ""}
           </span>
           {!loggedIn && (
-            <span className="text-xs text-gray-500">
-              Gastmodus: eigene Labels und persönliche API-Keys fließen erst nach dem Login ein.
+            <span className="text-xs text-subtle">
+              {t.guestHint}
             </span>
           )}
         </div>
       </div>
 
       {busy && (
-        <div className="card text-sm text-gray-300">
-          <span className="text-accent">●</span> {addresses.length} Adressen werden gegen alle Quellen geprüft. Das
-          Ergebnis erscheint erst am Ende – je nach Anzahl kann das einige Minuten dauern. Bitte die Seite so lange
-          geöffnet lassen.
+        <div className="card text-sm text-fg-2">
+          <span className="text-brand">●</span> {t.progress(addresses.length)}
         </div>
       )}
 
@@ -322,50 +421,50 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
       {data && (
         <div className="card space-y-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-            <span className="font-semibold">{data.summary.total} Einträge</span>
-            <span className={data.summary.flagged ? "text-red-300" : "text-gray-400"}>
-              {data.summary.flagged} gemeldet
+            <span className="font-semibold">{t.entries(data.summary.total)}</span>
+            <span className={data.summary.flagged ? "text-red-300" : "text-muted"}>
+              {t.flagged(data.summary.flagged)}
             </span>
-            <span className="text-gray-400">
-              davon {data.summary.high} hoch / {data.summary.medium} mittel
+            <span className="text-muted">
+              {t.ofWhich(data.summary.high, data.summary.medium)}
             </span>
-            <span className="text-gray-400">{data.summary.invalid} ungültig</span>
-            <span className="text-gray-400">{data.summary.errors} Fehler</span>
-            <span className="text-gray-500">
-              Dauer {(data.durationMs / 1000).toLocaleString("de-DE", { maximumFractionDigits: 1 })} s
+            <span className="text-muted">{t.invalidCount(data.summary.invalid)}</span>
+            <span className="text-muted">{t.errorCount(data.summary.errors)}</span>
+            <span className="text-subtle">
+              {t.duration(fmt.number(data.durationMs / 1000, 1))}
             </span>
             <button className="btn-secondary ml-auto" onClick={exportCsv} disabled={!visible.length}>
-              CSV exportieren
+              {t.exportCsv}
             </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={onlyFlagged} onChange={(e) => setOnlyFlagged(e.target.checked)} />
-              nur gemeldete zeigen
+              {t.onlyFlagged}
             </label>
             <input
               className="input w-64"
-              placeholder="Adresse oder Label suchen …"
+              placeholder={t.searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <span className="text-xs text-gray-500">
-              {visible.length} von {data.results.length} sichtbar
+            <span className="text-xs text-subtle">
+              {t.visibleOf(visible.length, data.results.length)}
             </span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-gray-400">
-                  <th className="py-2 pr-3">Adresse</th>
-                  <th className="py-2 pr-3">Einstufung</th>
-                  <th className="py-2 pr-3">Kategorie</th>
-                  <th className="py-2 pr-3">Quelle</th>
-                  <th className="py-2 pr-3">Labels</th>
-                  {shownBalance && <th className="py-2 pr-3">Saldo</th>}
-                  <th className="py-2">Status</th>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
+                  <th className="py-2 pr-3">{t.colAddress}</th>
+                  <th className="py-2 pr-3">{t.colVerdict}</th>
+                  <th className="py-2 pr-3">{t.colCategory}</th>
+                  <th className="py-2 pr-3">{t.colSource}</th>
+                  <th className="py-2 pr-3">{t.colLabels}</th>
+                  {shownBalance && <th className="py-2 pr-3">{t.colBalance}</th>}
+                  <th className="py-2">{t.colStatus}</th>
                 </tr>
               </thead>
               <tbody>
@@ -376,12 +475,12 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
                         <Link
                           href={`/address/${r.address}?chain=${data.chain}`}
                           title={r.address}
-                          className="mono text-accent hover:underline"
+                          className="mono text-brand hover:underline"
                         >
                           {shortHash(r.address, 10)}
                         </Link>
                       ) : (
-                        <span className="mono text-gray-400" title={r.address}>
+                        <span className="mono text-muted" title={r.address}>
                           {shortHash(r.address, 10)}
                         </span>
                       )}
@@ -394,23 +493,23 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
                           }`}
                           title={r.verdict.details || r.verdict.label}
                         >
-                          {r.verdict.severity === "high" ? "hoch" : "mittel"}
+                          {r.verdict.severity === "high" ? t.high : t.medium}
                         </span>
                       ) : (
-                        <span className="rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-200">
-                          {r.valid ? "unauffällig" : "–"}
+                        <span className="rounded bg-gray-700 px-1.5 py-0.5 text-xs text-fg-2">
+                          {r.valid ? t.clean : "–"}
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 text-gray-300">{r.verdict ? categoryText(r.verdict.category) : "–"}</td>
-                    <td className="py-2 pr-3 text-gray-400">{r.verdict?.source ?? "–"}</td>
+                    <td className="py-2 pr-3 text-fg-2">{r.verdict ? categoryText(r.verdict.category, locale) : "–"}</td>
+                    <td className="py-2 pr-3 text-muted">{r.verdict?.source ?? "–"}</td>
                     <td className="py-2 pr-3">
                       {r.labels.length ? (
                         <div className="flex flex-wrap gap-1">
                           {r.labels.map((l, i) => (
                             <span
                               key={`${l.source}-${i}`}
-                              className="rounded bg-panel px-1.5 py-0.5 text-xs text-gray-200 ring-1 ring-border"
+                              className="rounded bg-panel px-1.5 py-0.5 text-xs text-fg-2 ring-1 ring-border"
                               title={`${l.source}${l.details ? ": " + l.details : ""}`}
                             >
                               {l.own ? "✎ " : ""}
@@ -419,29 +518,29 @@ export default function ScreenView({ loggedIn }: { loggedIn: boolean }) {
                           ))}
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-500">keine</span>
+                        <span className="text-xs text-subtle">{t.noLabels}</span>
                       )}
                     </td>
                     {shownBalance && (
-                      <td className="mono py-2 pr-3 whitespace-nowrap text-gray-300">
-                        {r.balanceSat === undefined ? "–" : formatAmount(r.balanceSat, data.chain)}
+                      <td className="mono py-2 pr-3 whitespace-nowrap text-fg-2">
+                        {r.balanceSat === undefined ? "–" : fmt.amount(r.balanceSat, data.chain)}
                       </td>
                     )}
                     <td className="py-2 text-xs">
                       {!r.valid ? (
-                        <span className="text-yellow-400">{r.reason || "ungültig"}</span>
+                        <span className="text-yellow-400">{r.reason ? translateHint(r.reason, locale) : t.invalid}</span>
                       ) : r.error ? (
                         <span className="text-red-400">{r.error}</span>
                       ) : (
-                        <span className="text-gray-500">geprüft</span>
+                        <span className="text-subtle">{t.checked}</span>
                       )}
                     </td>
                   </tr>
                 ))}
                 {!visible.length && (
                   <tr>
-                    <td colSpan={shownBalance ? 7 : 6} className="py-4 text-center text-sm text-gray-500">
-                      Keine Einträge für diese Filter.
+                    <td colSpan={shownBalance ? 7 : 6} className="py-4 text-center text-sm text-subtle">
+                      {t.noRows}
                     </td>
                   </tr>
                 )}

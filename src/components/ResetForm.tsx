@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useLocale, useT } from "@/lib/i18n/provider";
+import { translateHint } from "@/lib/i18n/hints";
 
 interface Props {
   /** "request" fragt nach der E-Mail, "confirm" nach dem neuen Passwort */
@@ -11,8 +13,41 @@ interface Props {
   token?: string;
 }
 
+const TXT = {
+  en: {
+    titleRequest: "Forgotten password",
+    titleConfirm: "Set a new password",
+    leadRequest: "Enter your email address. We will send you a link that is valid for one hour.",
+    leadConfirm: "Choose a new password with at least 8 characters.",
+    email: "Email",
+    newPassword: "New password",
+    submitRequest: "Request link",
+    submitConfirm: "Save password",
+    sent: "If an account exists, a link has been sent.",
+    changed: "Password changed. You are signed in again.",
+    error: "Error",
+    back: "Back to login",
+  },
+  de: {
+    titleRequest: "Passwort vergessen",
+    titleConfirm: "Neues Passwort setzen",
+    leadRequest: "Gib deine E-Mail-Adresse an. Wir schicken dir einen Link, der eine Stunde lang gilt.",
+    leadConfirm: "Wähle ein neues Passwort mit mindestens 8 Zeichen.",
+    email: "E-Mail",
+    newPassword: "Neues Passwort",
+    submitRequest: "Link anfordern",
+    submitConfirm: "Passwort speichern",
+    sent: "Falls ein Konto besteht, wurde ein Link verschickt.",
+    changed: "Passwort geändert. Du bist wieder angemeldet.",
+    error: "Fehler",
+    back: "Zurück zum Login",
+  },
+};
+
 /** Passwort vergessen: E-Mail anfordern oder neues Passwort setzen. */
 export default function ResetForm({ mode, token }: Props) {
+  const t = useT(TXT);
+  const locale = useLocale();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,31 +72,29 @@ export default function ResetForm({ mode, token }: Props) {
     const json = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
-      setErr(json.error || "Fehler");
+      setErr(json.error || t.error);
       return;
     }
     if (mode === "request") {
-      setMsg(json.message || "Falls ein Konto besteht, wurde ein Link verschickt.");
-      if (json.hinweis) setHinweis(json.hinweis as string);
+      setMsg(json.message ? translateHint(json.message as string, locale) : t.sent);
+      if (json.hinweis) setHinweis(translateHint(json.hinweis as string, locale));
       return;
     }
-    setMsg("Passwort geändert. Du bist wieder angemeldet.");
+    setMsg(t.changed);
     router.push("/");
     router.refresh();
   }
 
   return (
     <form onSubmit={submit} className="card mx-auto mt-10 max-w-sm space-y-4">
-      <h1 className="text-xl font-semibold">{mode === "request" ? "Passwort vergessen" : "Neues Passwort setzen"}</h1>
+      <h1 className="text-xl font-semibold">{mode === "request" ? t.titleRequest : t.titleConfirm}</h1>
 
       {mode === "request" ? (
         <>
-          <p className="text-sm text-gray-400">
-            Gib deine E-Mail-Adresse an. Wir schicken dir einen Link, der eine Stunde lang gilt.
-          </p>
+          <p className="text-sm text-muted">{t.leadRequest}</p>
           <div>
             <label className="label" htmlFor="reset-email">
-              E-Mail
+              {t.email}
             </label>
             <input
               id="reset-email"
@@ -70,15 +103,16 @@ export default function ResetForm({ mode, token }: Props) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              suppressHydrationWarning
             />
           </div>
         </>
       ) : (
         <>
-          <p className="text-sm text-gray-400">Wähle ein neues Passwort mit mindestens 8 Zeichen.</p>
+          <p className="text-sm text-muted">{t.leadConfirm}</p>
           <div>
             <label className="label" htmlFor="reset-password">
-              Neues Passwort
+              {t.newPassword}
             </label>
             <input
               id="reset-password"
@@ -88,6 +122,7 @@ export default function ResetForm({ mode, token }: Props) {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={8}
+              suppressHydrationWarning
             />
           </div>
         </>
@@ -98,12 +133,12 @@ export default function ResetForm({ mode, token }: Props) {
       {hinweis && <p className="text-sm text-yellow-400">{hinweis}</p>}
 
       <button className="btn w-full justify-center" disabled={busy}>
-        {busy ? "…" : mode === "request" ? "Link anfordern" : "Passwort speichern"}
+        {busy ? "…" : mode === "request" ? t.submitRequest : t.submitConfirm}
       </button>
 
-      <p className="text-center text-xs text-gray-500">
-        <Link href="/login" className="text-accent">
-          Zurück zum Login
+      <p className="text-center text-xs text-subtle">
+        <Link href="/login" className="text-brand">
+          {t.back}
         </Link>
       </p>
     </form>

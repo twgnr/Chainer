@@ -16,27 +16,31 @@ import {
 const TXID = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b";
 const BTC_ADDRESS = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2";
 
-/** Zahl in derselben Locale formatieren wie das Modul, damit Trennzeichen nicht stören */
-function de(value: number, maximumFractionDigits: number): string {
-  return value.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits });
+/**
+ * Zahl in derselben Locale formatieren wie das Modul, damit Trennzeichen nicht
+ * stören. Ohne ausdrückliche Sprache formatiert das Modul in der
+ * Standardsprache Englisch (`en-GB`).
+ */
+function num(value: number, maximumFractionDigits: number, locale = "en-GB"): string {
+  return value.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits });
 }
 
 describe("formatAmount", () => {
   it("rechnet Satoshi in BTC um", () => {
     expect(formatAmount(100_000_000)).toBe("1 BTC");
     expect(formatBtc(100_000_000)).toBe("1 BTC");
-    expect(formatAmount(150_000_000)).toBe(`${de(1.5, 8)} BTC`);
+    expect(formatAmount(150_000_000)).toBe(`${num(1.5, 8)} BTC`);
   });
 
   it("nutzt bei Ethereum 18 Nachkommastellen", () => {
     expect(formatAmount(1e18, "ethereum", 18)).toBe("1 ETH");
-    expect(formatAmount(5e17, "ethereum", 18)).toBe(`${de(0.5, 18)} ETH`);
+    expect(formatAmount(5e17, "ethereum", 18)).toBe(`${num(0.5, 18)} ETH`);
   });
 
   it("rundet sehr kleine Beträge nicht auf null", () => {
     const out = formatAmount(1, "bitcoin", 2);
     expect(out).not.toBe("0 BTC");
-    expect(out).toContain(de(1e-8, 8));
+    expect(out).toContain(num(1e-8, 8));
   });
 
   it("liefert für undefined, null und NaN einen Gedankenstrich", () => {
@@ -45,7 +49,7 @@ describe("formatAmount", () => {
   });
 
   it("begrenzt die Nachkommastellen auf den übergebenen Wert", () => {
-    expect(formatAmount(123_456_789, "bitcoin", 2)).toBe(`${de(1.23, 2)} BTC`);
+    expect(formatAmount(123_456_789, "bitcoin", 2)).toBe(`${num(1.23, 2)} BTC`);
   });
 });
 
@@ -59,7 +63,7 @@ describe("toUnits", () => {
 
 describe("formatFiat", () => {
   it("multipliziert den Betrag mit dem Kurs", () => {
-    const erwartet = (50_000).toLocaleString("de-DE", {
+    const erwartet = (50_000).toLocaleString("en-GB", {
       style: "currency",
       currency: "EUR",
       maximumFractionDigits: 2,
@@ -76,8 +80,8 @@ describe("formatFiat", () => {
 
 describe("formatPercent", () => {
   it("stellt Anteile als Prozentwert dar", () => {
-    expect(formatPercent(0.25)).toBe(`${de(25, 1)} %`);
-    expect(formatPercent(0.1234, 2)).toBe(`${de(12.34, 2)} %`);
+    expect(formatPercent(0.25)).toBe(`${num(25, 1)} %`);
+    expect(formatPercent(0.1234, 2)).toBe(`${num(12.34, 2)} %`);
   });
 });
 
@@ -96,16 +100,19 @@ describe("shortHash", () => {
 
 describe("formatDate / formatDateShort", () => {
   it("weist fehlende Zeitstempel als unbestätigt aus", () => {
-    expect(formatDate(undefined)).toBe("unbestätigt");
-    expect(formatDate(0)).toBe("unbestätigt");
-    expect(formatDateShort(undefined)).toBe("unbest.");
+    expect(formatDate(undefined)).toBe("unconfirmed");
+    expect(formatDate(0)).toBe("unconfirmed");
+    expect(formatDateShort(undefined)).toBe("unconf.");
+    expect(formatDate(undefined, "de")).toBe("unbestätigt");
+    expect(formatDateShort(undefined, "de")).toBe("unbest.");
   });
 
-  it("formatiert einen Zeitstempel wie toLocaleString in der deutschen Locale", () => {
+  it("formatiert einen Zeitstempel in der Locale der gewählten Sprache", () => {
     const unix = Date.UTC(2024, 0, 1, 12, 0, 0) / 1000;
-    expect(formatDate(unix)).toBe(new Date(unix * 1000).toLocaleString("de-DE"));
+    expect(formatDate(unix)).toBe(new Date(unix * 1000).toLocaleString("en-GB"));
+    expect(formatDate(unix, "de")).toBe(new Date(unix * 1000).toLocaleString("de-DE"));
     expect(formatDateShort(unix)).toBe(
-      new Date(unix * 1000).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" }),
+      new Date(unix * 1000).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit" }),
     );
   });
 });
@@ -124,5 +131,30 @@ describe("isTxid / isBtcAddress / classifyInput", () => {
     expect(classifyInput(TXID)).toBe("txid");
     expect(classifyInput(BTC_ADDRESS)).toBe("address");
     expect(classifyInput("hallo")).toBe("unknown");
+  });
+});
+
+describe("makeFormatters", () => {
+  it("bindet die Sprache an alle Formatierer", async () => {
+    const { makeFormatters } = await import("@/lib/format");
+    const en = makeFormatters("en");
+    const de = makeFormatters("de");
+    expect(en.amount(150_000_000)).toBe(`${num(1.5, 8)} BTC`);
+    expect(de.amount(150_000_000)).toBe(`${num(1.5, 8, "de-DE")} BTC`);
+    expect(en.percent(0.25)).toBe(`${num(25, 1)} %`);
+    expect(de.percent(0.25)).toBe(`${num(25, 1, "de-DE")} %`);
+    expect(en.date(undefined)).toBe("unconfirmed");
+    expect(de.date(undefined)).toBe("unbestätigt");
+    expect(de.intlLocale).toBe("de-DE");
+  });
+
+  it("gibt für fehlende Zeitstempel den Ersatztext zurück", async () => {
+    const { makeFormatters } = await import("@/lib/format");
+    const f = makeFormatters("en");
+    expect(f.timestamp(undefined)).toBe("–");
+    expect(f.timestamp("kein Datum")).toBe("–");
+    expect(f.timestamp("2024-01-01T12:00:00.000Z")).toBe(
+      new Date("2024-01-01T12:00:00.000Z").toLocaleString("en-GB"),
+    );
   });
 });

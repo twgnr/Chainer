@@ -77,7 +77,7 @@ describe("POST /api/trace", () => {
     const { POST } = await import("@/app/api/trace/route");
     const res = await POST(jsonRequest("http://test/api/trace"));
     expect(res.status).toBe(400);
-    expect(String((await body(res)).error)).toContain("Ungültige Parameter");
+    expect(String((await body(res)).error)).toContain("Invalid parameters");
   });
 
   it("lehnt einen Startwert ab, der zur Chain nicht passt", async () => {
@@ -85,7 +85,7 @@ describe("POST /api/trace", () => {
     // Bitcoin-Adresse, aber als Ethereum-Anfrage
     const res = await POST(jsonRequest("http://test/api/trace", { start: BTC_ADDRESS, chain: "ethereum" }));
     expect(res.status).toBe(400);
-    expect(String((await body(res)).error)).toContain("keine gültige Adresse oder Transaktions-ID");
+    expect(String((await body(res)).error)).toContain("is not a valid address or transaction ID");
   });
 
   it("liefert bei gültigen Parametern 200 und die erwarteten Felder", async () => {
@@ -113,14 +113,14 @@ describe("POST /api/path", () => {
     const { POST } = await import("@/app/api/path/route");
     const res = await POST(jsonRequest("http://test/api/path", { from: BTC_ADDRESS, to: BTC_ADDRESS }));
     expect(res.status).toBe(400);
-    expect((await body(res)).error).toBe("Start- und Zieladresse sind identisch");
+    expect((await body(res)).error).toBe("The start and destination address are the same");
   });
 
   it("lehnt eine ungültige Adresse ab", async () => {
     const { POST } = await import("@/app/api/path/route");
     const res = await POST(jsonRequest("http://test/api/path", { from: "keineadresse123", to: BTC_ADDRESS_2 }));
     expect(res.status).toBe(400);
-    expect(String((await body(res)).error)).toContain("keine gültige bitcoin-Adresse");
+    expect(String((await body(res)).error)).toContain("is not a valid bitcoin address");
   });
 
   it("liefert bei zwei gültigen Adressen 200 mit Wegen und Graph", async () => {
@@ -140,7 +140,7 @@ describe("POST /api/screen", () => {
     const adressen = Array.from({ length: 201 }, (_, i) => `adresse-${i}`);
     const res = await POST(jsonRequest("http://test/api/screen", { addresses: adressen }));
     expect(res.status).toBe(400);
-    expect(String((await body(res)).error)).toContain("Zu viele Adressen");
+    expect(String((await body(res)).error)).toContain("Too many addresses");
   });
 
   it("beantwortet eine leere Liste mit einer verständlichen Meldung", async () => {
@@ -154,7 +154,7 @@ describe("POST /api/screen", () => {
     const { POST } = await import("@/app/api/screen/route");
     const res = await POST(jsonRequest("http://test/api/screen", { addresses: ["  ", ""] }));
     expect(res.status).toBe(400);
-    expect((await body(res)).error).toBe("Keine Adressen gefunden");
+    expect((await body(res)).error).toBe("No addresses found");
   });
 
   it("führt ungültige Adressen als valid:false statt als Fehler", async () => {
@@ -176,7 +176,7 @@ describe("GET /api/address/{addr}", () => {
     const { GET } = await import("@/app/api/address/[addr]/route");
     const res = await GET(getRequest("http://test/api/address/unsinn"), routeParams({ addr: "unsinn" }));
     expect(res.status).toBe(400);
-    expect((await body(res)).error).toBe("Keine gültige bitcoin-Adresse");
+    expect((await body(res)).error).toBe("Not a valid bitcoin address");
   });
 
   it("liefert bei einer gültigen Adresse 200 mit info, txs und labels", async () => {
@@ -200,7 +200,7 @@ describe("GET /api/tx/{txid}", () => {
     const { GET } = await import("@/app/api/tx/[txid]/route");
     const res = await GET(getRequest("http://test/api/tx/abc"), routeParams({ txid: "abc" }));
     expect(res.status).toBe(400);
-    expect((await body(res)).error).toBe("Keine gültige Transaktions-ID");
+    expect((await body(res)).error).toBe("Not a valid transaction ID");
   });
 
   it("liefert bei gültiger ID 200 mit der Transaktion", async () => {
@@ -218,7 +218,7 @@ describe("POST /api/mixer", () => {
     const { POST } = await import("@/app/api/mixer/route");
     const res = await POST(jsonRequest("http://test/api/mixer", {}));
     expect(res.status).toBe(400);
-    expect(String((await body(res)).error)).toContain("Ungültige Parameter");
+    expect(String((await body(res)).error)).toContain("Invalid parameters");
   });
 
   it("lehnt eine ungültige Mixer-Adresse ab", async () => {
@@ -231,7 +231,7 @@ describe("POST /api/mixer", () => {
       }),
     );
     expect(res.status).toBe(400);
-    expect((await body(res)).error).toBe("Keine gültige bitcoin-Adresse");
+    expect((await body(res)).error).toBe("Not a valid bitcoin address");
   });
 });
 
@@ -240,7 +240,7 @@ describe("POST /api/crosschain", () => {
     const { POST } = await import("@/app/api/crosschain/route");
     const res = await POST(jsonRequest("http://test/api/crosschain", {}));
     expect(res.status).toBe(400);
-    expect(String((await body(res)).error)).toContain("Ungültige Parameter");
+    expect(String((await body(res)).error)).toContain("Invalid parameters");
   });
 
   it("lehnt gleiche Ausgangs- und Zielkette ab", async () => {
@@ -255,7 +255,7 @@ describe("POST /api/crosschain", () => {
       }),
     );
     expect(res.status).toBe(400);
-    expect((await body(res)).error).toBe("Ausgangs- und Zielkette sind identisch");
+    expect((await body(res)).error).toBe("The source and destination chain are the same");
   });
 });
 
@@ -266,7 +266,7 @@ describe("Berechtigungen ohne Anmeldung", () => {
     const { GET } = await import("@/app/api/cases/route");
     const res = await GET();
     expect(res.status).toBe(401);
-    expect((await body(res)).error).toBe("Nicht eingeloggt");
+    expect((await body(res)).error).toBe("Not signed in");
   });
 
   it("POST /api/cases liefert 401", async () => {
@@ -328,7 +328,7 @@ describe("Angemeldet, aber ohne Datenbank", () => {
     const { POST } = await import("@/app/api/cases/route");
     const res = await POST(jsonRequest("http://test/api/cases", { name: "Fall", start: BTC_ADDRESS }));
     expect(res.status).toBe(503);
-    expect((await body(res)).error).toBe("MongoDB nicht konfiguriert");
+    expect((await body(res)).error).toBe("MongoDB is not configured");
   });
 
   it("POST /api/annotations liefert 503", async () => {
@@ -359,7 +359,7 @@ describe("Angemeldet, aber ohne Datenbank", () => {
     const { POST } = await import("@/app/api/watch/route");
     const res = await POST(jsonRequest("http://test/api/watch", { address: "keineadresse123" }));
     expect(res.status).toBe(400);
-    expect((await body(res)).error).toBe("Keine gültige bitcoin-Adresse");
+    expect((await body(res)).error).toBe("Not a valid bitcoin address");
   });
 });
 
@@ -379,7 +379,7 @@ describe("Cron-Endpunkte", () => {
     const { POST } = await import("@/app/api/watch/check/route");
     const res = await POST(jsonRequest("http://test/api/watch/check"));
     expect(res.status).toBe(401);
-    expect((await body(res)).error).toBe("Nicht eingeloggt");
+    expect((await body(res)).error).toBe("Not signed in");
   });
 
   it("POST /api/watch/check lehnt ein falsches Geheimnis ab", async () => {

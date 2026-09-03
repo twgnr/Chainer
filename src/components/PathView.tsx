@@ -4,10 +4,109 @@ import Link from "next/link";
 import { useState } from "react";
 import TraceGraph, { EMPTY_VIEW, type GraphOptions } from "./TraceGraph";
 import LabelBadges from "./LabelBadges";
-import { formatAmount, formatDate, formatFiat, shortHash } from "@/lib/format";
+import { shortHash } from "@/lib/format";
 import { CHAIN_LIST, chainMeta, type ChainId } from "@/lib/chains";
 import { categoryText } from "@/lib/trace/risk";
 import type { AddressNodeData, TraceNode, TraceResult } from "@/lib/trace/types";
+import { useFormatters, useLocale, useT } from "@/lib/i18n/provider";
+import { COMMON } from "@/lib/i18n/labels";
+import { translateHint, translateHints } from "@/lib/i18n/hints";
+
+const TXT = {
+  en: {
+    caseName: (from: string, to: string) => `Connection ${from} → ${to}`,
+    savedAsCase: "Saved as a case.",
+    from: "From (start address)",
+    to: "To (destination address)",
+    chain: "Chain",
+    swapTitle: "Swap the direction",
+    swap: "⇅ swap",
+    depthPerSide: "Depth per side",
+    txPerAddress: "Tx / address",
+    addrPerTx: "Addr. / tx",
+    minUnit: (unit: string) => `Min. ${unit}`,
+    maxQueries: "Max. queries",
+    maxPaths: "Max. paths",
+    searching: "Search running…",
+    search: "Find a connection",
+    directedTitle: "Only paths where the money actually flows from A to B",
+    directed: "in the direction of flow only",
+    skipHubsTitle: "Do not follow exchanges and other hubs",
+    skipHubs: "skip hubs",
+    loadLabels: "load labels",
+    mayTakeMinutes: "Depending on depth and rate limits the search can take a few minutes.",
+    foundCount: (paths: number, shortest: number) =>
+      `${paths} connection${paths === 1 ? "" : "s"} found · shortest path: ${shortest} step${shortest === 1 ? "" : "s"}`,
+    notFound: "No connection found within the given limits",
+    stats: (calls: number, addresses: number, seconds: string) =>
+      `${calls} queries · ${addresses} addresses checked · ${seconds} s`,
+    hubsSkipped: (n: number) => ` · ${n} hubs skipped`,
+    exhausted: "Query budget used up – raise the limit for a deeper search",
+    exportJson: "Export JSON",
+    saveAsCase: "Save as a case",
+    notFoundLead: "That does not mean there is no connection. Possible reasons:",
+    reasonLonger: (steps: number) => `The connection is longer than ${steps} steps.`,
+    reasonHub: "The path runs through an exchange; with “skip hubs” it is not followed.",
+    reasonDirection: "The money flowed the other way. Search again with “⇅ swap”, or without “in the direction of flow only”.",
+    reasonBudget: "The query budget was too small. Raise the depth or the maximum number of queries.",
+    reasonMinValue: "Small amounts were filtered out. Lower the minimum amount.",
+    warningsTitle: "Notes during the search",
+    riskOnPaths: (n: number) => `${n} address${n === 1 ? "" : "es"} classified as harmful on the paths found:`,
+    pathTitle: (index: number, steps: number) => `Path ${index}: ${steps} step${steps === 1 ? "" : "s"}`,
+    bottleneck: "Bottleneck",
+    harmful: "harmful",
+    followFromStart: "Follow on from the start",
+    hideGraph: "Hide the graph",
+    showGraph: "Show as a graph",
+  },
+  de: {
+    caseName: (from: string, to: string) => `Verbindung ${from} → ${to}`,
+    savedAsCase: "Als Fall gespeichert.",
+    from: "Von (Startadresse)",
+    to: "Nach (Zieladresse)",
+    chain: "Chain",
+    swapTitle: "Richtung tauschen",
+    swap: "⇅ tauschen",
+    depthPerSide: "Tiefe je Seite",
+    txPerAddress: "Tx / Adresse",
+    addrPerTx: "Adr. / Tx",
+    minUnit: (unit: string) => `Min. ${unit}`,
+    maxQueries: "Max. Abfragen",
+    maxPaths: "Max. Wege",
+    searching: "Suche läuft…",
+    search: "Verbindung suchen",
+    directedTitle: "Nur Wege, bei denen das Geld tatsächlich von A nach B fließt",
+    directed: "nur in Flussrichtung",
+    skipHubsTitle: "Börsen und andere Umschlagplätze nicht weiterverfolgen",
+    skipHubs: "Umschlagplätze überspringen",
+    loadLabels: "Labels laden",
+    mayTakeMinutes: "Je nach Tiefe und Rate-Limits kann die Suche einige Minuten dauern.",
+    foundCount: (paths: number, shortest: number) =>
+      `${paths} Verbindung(en) gefunden · kürzester Weg: ${shortest} Schritt(e)`,
+    notFound: "Keine Verbindung im gesuchten Rahmen gefunden",
+    stats: (calls: number, addresses: number, seconds: string) =>
+      `${calls} Abfragen · ${addresses} Adressen geprüft · ${seconds} s`,
+    hubsSkipped: (n: number) => ` · ${n} Umschlagplätze übersprungen`,
+    exhausted: "Abfragebudget aufgebraucht – Grenze erhöhen für eine tiefere Suche",
+    exportJson: "Export JSON",
+    saveAsCase: "Als Fall speichern",
+    notFoundLead: "Das bedeutet nicht, dass es keine Verbindung gibt. Mögliche Gründe:",
+    reasonLonger: (steps: number) => `Die Verbindung ist länger als ${steps} Schritte.`,
+    reasonHub: "Der Weg führt über eine Börse; mit „Umschlagplätze überspringen“ wird er nicht verfolgt.",
+    reasonDirection:
+      "Das Geld floss in die andere Richtung. Mit „⇅ tauschen“ oder ohne „nur in Flussrichtung“ erneut suchen.",
+    reasonBudget: "Das Abfragebudget war zu knapp. Tiefe oder maximale Abfragen erhöhen.",
+    reasonMinValue: "Kleine Beträge wurden ausgefiltert. Mindestbetrag senken.",
+    warningsTitle: "Hinweise während der Suche",
+    riskOnPaths: (n: number) => `${n} als schädlich eingestufte Adresse(n) auf den gefundenen Wegen:`,
+    pathTitle: (index: number, steps: number) => `Weg ${index}: ${steps} Schritt(e)`,
+    bottleneck: "Engstelle",
+    harmful: "schädlich",
+    followFromStart: "Vom Start weiterverfolgen",
+    hideGraph: "Graph ausblenden",
+    showGraph: "Als Graph anzeigen",
+  },
+};
 
 interface PathHop {
   txid: string;
@@ -80,6 +179,10 @@ export default function PathView({
   const [showGraph, setShowGraph] = useState(true);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
+  const t = useT(TXT);
+  const c = useT(COMMON);
+  const locale = useLocale();
+  const fmt = useFormatters();
   const meta = chainMeta(params.chain);
 
   async function run(e: React.FormEvent) {
@@ -99,7 +202,7 @@ export default function PathView({
       if (!res.ok) throw new Error(json.error || res.statusText);
       setResult(json);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(translateHint(err instanceof Error ? err.message : String(err), locale));
     } finally {
       setLoading(false);
     }
@@ -116,7 +219,7 @@ export default function PathView({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: `Verbindung ${shortHash(params.from, 5)} → ${shortHash(params.to, 5)}`,
+        name: t.caseName(shortHash(params.from, 5), shortHash(params.to, 5)),
         start: params.from,
         chain: params.chain,
         params: { ...params, mode: "path" },
@@ -124,7 +227,7 @@ export default function PathView({
       }),
     });
     const json = await res.json();
-    setSaveMsg(res.ok ? "Als Fall gespeichert." : json.error || "Fehler");
+    setSaveMsg(res.ok ? t.savedAsCase : json.error || c.error);
   }
 
   function exportJson() {
@@ -160,7 +263,7 @@ export default function PathView({
     <div className="space-y-4">
       <form className="card grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8" onSubmit={run}>
         <div className="col-span-2 md:col-span-4 lg:col-span-3">
-          <label className="label">Von (Startadresse)</label>
+          <label className="label">{t.from}</label>
           <input
             className="input mono"
             value={params.from}
@@ -170,7 +273,7 @@ export default function PathView({
           />
         </div>
         <div className="col-span-2 md:col-span-4 lg:col-span-3">
-          <label className="label">Nach (Zieladresse)</label>
+          <label className="label">{t.to}</label>
           <input
             className="input mono"
             value={params.to}
@@ -180,7 +283,7 @@ export default function PathView({
           />
         </div>
         <div>
-          <label className="label">Chain</label>
+          <label className="label">{t.chain}</label>
           <select
             className="input"
             value={params.chain}
@@ -194,53 +297,53 @@ export default function PathView({
           </select>
         </div>
         <div className="flex items-end">
-          <button type="button" className="btn-secondary w-full justify-center" onClick={swap} title="Richtung tauschen">
-            ⇅ tauschen
+          <button type="button" className="btn-secondary w-full justify-center" onClick={swap} title={t.swapTitle}>
+            {t.swap}
           </button>
         </div>
         <div>
-          <label className="label">Tiefe je Seite</label>
+          <label className="label">{t.depthPerSide}</label>
           <input className="input" type="number" min={1} max={5} value={params.maxDepth} onChange={num("maxDepth")} />
         </div>
         <div>
-          <label className="label">Tx / Adresse</label>
+          <label className="label">{t.txPerAddress}</label>
           <input className="input" type="number" min={1} max={30} value={params.maxTxPerAddress} onChange={num("maxTxPerAddress")} />
         </div>
         <div>
-          <label className="label">Adr. / Tx</label>
+          <label className="label">{t.addrPerTx}</label>
           <input className="input" type="number" min={1} max={30} value={params.maxAddrPerTx} onChange={num("maxAddrPerTx")} />
         </div>
         <div>
-          <label className="label">Min. {meta.unit}</label>
+          <label className="label">{t.minUnit(meta.unit)}</label>
           <input className="input" type="number" min={0} value={params.minValueSat} onChange={num("minValueSat")} />
         </div>
         <div>
-          <label className="label">Max. Abfragen</label>
+          <label className="label">{t.maxQueries}</label>
           <input className="input" type="number" min={10} max={500} value={params.maxApiCalls} onChange={num("maxApiCalls")} />
         </div>
         <div>
-          <label className="label">Max. Wege</label>
+          <label className="label">{t.maxPaths}</label>
           <input className="input" type="number" min={1} max={20} value={params.maxPaths} onChange={num("maxPaths")} />
         </div>
         <div className="col-span-2 flex flex-wrap items-end gap-3 text-sm md:col-span-4 lg:col-span-8">
           <button className="btn" disabled={loading || !params.from || !params.to}>
-            {loading ? "Suche läuft…" : "Verbindung suchen"}
+            {loading ? t.searching : t.search}
           </button>
-          <label className="flex items-center gap-1" title="Nur Wege, bei denen das Geld tatsächlich von A nach B fließt">
+          <label className="flex items-center gap-1" title={t.directedTitle}>
             <input type="checkbox" checked={params.directed} onChange={(e) => setParams({ ...params, directed: e.target.checked })} />
-            nur in Flussrichtung
+            {t.directed}
           </label>
-          <label className="flex items-center gap-1" title="Börsen und andere Umschlagplätze nicht weiterverfolgen">
+          <label className="flex items-center gap-1" title={t.skipHubsTitle}>
             <input type="checkbox" checked={params.skipHubs} onChange={(e) => setParams({ ...params, skipHubs: e.target.checked })} />
-            Umschlagplätze überspringen
+            {t.skipHubs}
           </label>
           <label className="flex items-center gap-1">
             <input type="checkbox" checked={params.enrich} onChange={(e) => setParams({ ...params, enrich: e.target.checked })} />
-            Labels laden
+            {t.loadLabels}
           </label>
           {loading && (
-            <span className="text-xs text-gray-400">
-              Je nach Tiefe und Rate-Limits kann die Suche einige Minuten dauern.
+            <span className="text-xs text-muted">
+              {t.mayTakeMinutes}
             </span>
           )}
         </div>
@@ -257,51 +360,52 @@ export default function PathView({
           >
             {result.found ? (
               <span className="font-semibold text-green-400">
-                {result.paths.length} Verbindung(en) gefunden · kürzester Weg: {result.paths[0].hops.length} Schritt(e)
+                {t.foundCount(result.paths.length, result.paths[0].hops.length)}
               </span>
             ) : (
-              <span className="font-semibold text-yellow-400">Keine Verbindung im gesuchten Rahmen gefunden</span>
+              <span className="font-semibold text-yellow-400">{t.notFound}</span>
             )}
-            <span className="text-gray-400">
-              {result.stats.apiCalls} Abfragen · {result.stats.addressesExpanded} Adressen geprüft ·{" "}
-              {(result.stats.durationMs / 1000).toFixed(1)} s
-              {result.stats.hubsSkipped > 0 && ` · ${result.stats.hubsSkipped} Umschlagplätze übersprungen`}
+            <span className="text-muted">
+              {t.stats(
+                result.stats.apiCalls,
+                result.stats.addressesExpanded,
+                fmt.number(result.stats.durationMs / 1000, 1),
+              )}
+              {result.stats.hubsSkipped > 0 && t.hubsSkipped(result.stats.hubsSkipped)}
             </span>
             {result.stats.exhausted && (
-              <span className="text-yellow-400">Abfragebudget aufgebraucht – Grenze erhöhen für eine tiefere Suche</span>
+              <span className="text-yellow-400">{t.exhausted}</span>
             )}
             <span className="ml-auto flex items-center gap-2">
               <button className="btn-secondary" type="button" onClick={exportJson}>
-                Export JSON
+                {t.exportJson}
               </button>
               {loggedIn && result.found && (
                 <>
                   <button className="btn-secondary" type="button" onClick={saveAsCase}>
-                    Als Fall speichern
+                    {t.saveAsCase}
                   </button>
-                  {saveMsg && <span className="text-xs text-gray-400">{saveMsg}</span>}
+                  {saveMsg && <span className="text-xs text-muted">{saveMsg}</span>}
                 </>
               )}
             </span>
           </div>
 
           {!result.found && (
-            <div className="card text-sm text-gray-300">
-              <p className="mb-2">Das bedeutet nicht, dass es keine Verbindung gibt. Mögliche Gründe:</p>
-              <ul className="list-disc space-y-1 pl-5 text-gray-400">
-                <li>Die Verbindung ist länger als {params.maxDepth * 2} Schritte.</li>
-                <li>Der Weg führt über eine Börse; mit &bdquo;Umschlagplätze überspringen&ldquo; wird er nicht verfolgt.</li>
-                <li>
-                  Das Geld floss in die andere Richtung. Mit &bdquo;⇅ tauschen&ldquo; oder ohne &bdquo;nur in Flussrichtung&ldquo; erneut suchen.
-                </li>
-                <li>Das Abfragebudget war zu knapp. Tiefe oder maximale Abfragen erhöhen.</li>
-                <li>Kleine Beträge wurden ausgefiltert. Mindestbetrag senken.</li>
+            <div className="card text-sm text-fg-2">
+              <p className="mb-2">{t.notFoundLead}</p>
+              <ul className="list-disc space-y-1 pl-5 text-muted">
+                <li>{t.reasonLonger(params.maxDepth * 2)}</li>
+                <li>{t.reasonHub}</li>
+                <li>{t.reasonDirection}</li>
+                <li>{t.reasonBudget}</li>
+                <li>{t.reasonMinValue}</li>
               </ul>
               {result.warnings.length > 0 && (
                 <div className="mt-3">
-                  <div className="font-medium text-yellow-400">Hinweise während der Suche</div>
-                  <ul className="list-disc pl-5 text-xs text-gray-400">
-                    {result.warnings.slice(0, 5).map((w, i) => (
+                  <div className="font-medium text-yellow-400">{t.warningsTitle}</div>
+                  <ul className="list-disc pl-5 text-xs text-muted">
+                    {translateHints(result.warnings.slice(0, 5), locale).map((w, i) => (
                       <li key={i}>{w}</li>
                     ))}
                   </ul>
@@ -315,9 +419,9 @@ export default function PathView({
               {result.graph.riskSources.length > 0 && (
                 <div className="rounded-lg border border-red-500/70 bg-red-950/40 p-3 text-sm">
                   <span className="font-semibold text-red-300">
-                    &#9888; {result.graph.riskSources.length} als schädlich eingestufte Adresse(n) auf den gefundenen Wegen:
+                    &#9888; {t.riskOnPaths(result.graph.riskSources.length)}
                   </span>{" "}
-                  {result.graph.riskSources.map((r) => `${r.label} (${categoryText(r.category)})`).join(", ")}
+                  {result.graph.riskSources.map((r) => `${r.label} (${categoryText(r.category, locale)})`).join(", ")}
                 </div>
               )}
 
@@ -326,16 +430,16 @@ export default function PathView({
                   <div key={i} className="card">
                     <div className="mb-2 flex flex-wrap items-center gap-3">
                       <h3 className="font-semibold">
-                        Weg {i + 1}: {p.hops.length} Schritt(e)
+                        {t.pathTitle(i + 1, p.hops.length)}
                       </h3>
-                      <span className="text-sm text-gray-400">
-                        Engstelle {formatAmount(p.bottleneckSat, params.chain, 5)}
+                      <span className="text-sm text-muted">
+                        {t.bottleneck} {fmt.amount(p.bottleneckSat, params.chain, 5)}
                         {result.graph.priceEur !== undefined &&
-                          ` (${formatFiat(p.bottleneckSat, result.graph.priceEur, params.chain)})`}
+                          ` (${fmt.fiat(p.bottleneckSat, result.graph.priceEur, params.chain)})`}
                       </span>
                       {p.firstSeen && (
-                        <span className="text-sm text-gray-400">
-                          {formatDate(p.firstSeen)} → {formatDate(p.lastSeen)}
+                        <span className="text-sm text-muted">
+                          {fmt.date(p.firstSeen)} → {fmt.date(p.lastSeen)}
                         </span>
                       )}
                     </div>
@@ -345,29 +449,29 @@ export default function PathView({
                         const toNode = addrNode(h.to);
                         return (
                           <li key={k} className="flex flex-wrap items-center gap-2 border-l-2 border-border pl-3 text-sm">
-                            <span className="text-xs text-gray-500">{k + 1}.</span>
-                            <Link href={`/address/${h.from}?chain=${params.chain}`} className="mono text-xs hover:text-accent" title={h.from}>
+                            <span className="text-xs text-subtle">{k + 1}.</span>
+                            <Link href={`/address/${h.from}?chain=${params.chain}`} className="mono text-xs hover:text-brand" title={h.from}>
                               {shortHash(h.from, 6)}
                             </Link>
                             {fromNode?.isRiskSource && (
-                              <span className="rounded bg-red-700 px-1 text-[9px] text-white">&#9888; schädlich</span>
+                              <span className="rounded bg-red-700 px-1 text-[9px] text-white">&#9888; {t.harmful}</span>
                             )}
                             {fromNode && fromNode.labels.length > 0 && <LabelBadges labels={fromNode.labels.slice(0, 1)} compact />}
-                            <span className="text-gray-500">→</span>
-                            <Link href={`/tx/${h.txid}?chain=${params.chain}`} className="mono text-xs text-gray-400 hover:text-accent" title={h.txid}>
+                            <span className="text-subtle">→</span>
+                            <Link href={`/tx/${h.txid}?chain=${params.chain}`} className="mono text-xs text-muted hover:text-brand" title={h.txid}>
                               tx {shortHash(h.txid, 5)}
                             </Link>
-                            <span className="text-gray-500">→</span>
-                            <Link href={`/address/${h.to}?chain=${params.chain}`} className="mono text-xs hover:text-accent" title={h.to}>
+                            <span className="text-subtle">→</span>
+                            <Link href={`/address/${h.to}?chain=${params.chain}`} className="mono text-xs hover:text-brand" title={h.to}>
                               {shortHash(h.to, 6)}
                             </Link>
                             {toNode?.isRiskSource && (
-                              <span className="rounded bg-red-700 px-1 text-[9px] text-white">&#9888; schädlich</span>
+                              <span className="rounded bg-red-700 px-1 text-[9px] text-white">&#9888; {t.harmful}</span>
                             )}
                             {toNode && toNode.labels.length > 0 && <LabelBadges labels={toNode.labels.slice(0, 1)} compact />}
                             <span className="ml-auto whitespace-nowrap">
-                              {formatAmount(h.valueSat, params.chain, 5)}
-                              <span className="ml-2 text-xs text-gray-500">{formatDate(h.blockTime)}</span>
+                              {fmt.amount(h.valueSat, params.chain, 5)}
+                              <span className="ml-2 text-xs text-subtle">{fmt.date(h.blockTime)}</span>
                             </span>
                           </li>
                         );
@@ -378,7 +482,7 @@ export default function PathView({
                         className="btn-secondary"
                         href={`/trace?start=${p.hops[0].from}&chain=${params.chain}&direction=forward`}
                       >
-                        Vom Start weiterverfolgen
+                        {t.followFromStart}
                       </Link>
                     </div>
                   </div>
@@ -387,10 +491,10 @@ export default function PathView({
 
               <div className="flex items-center gap-3">
                 <button className="btn-secondary" onClick={() => setShowGraph(!showGraph)}>
-                  {showGraph ? "Graph ausblenden" : "Als Graph anzeigen"}
+                  {showGraph ? t.hideGraph : t.showGraph}
                 </button>
                 {selected?.data.type === "address" && (
-                  <span className="mono text-xs text-gray-400">{selected.data.address}</span>
+                  <span className="mono text-xs text-muted">{selected.data.address}</span>
                 )}
               </div>
 

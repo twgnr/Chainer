@@ -8,6 +8,82 @@ import { EMPTY_VIEW, type GraphViewState } from "./TraceGraph";
 import { shortHash } from "@/lib/format";
 import type { ChainId } from "@/lib/chains";
 import type { TraceResult } from "@/lib/trace/types";
+import { useFormatters, useT } from "@/lib/i18n/provider";
+import { COMMON } from "@/lib/i18n/labels";
+
+const TXT = {
+  en: {
+    refreshed: (changed: number) =>
+      `${changed} case${changed === 1 ? "" : "s"} with movement. Reload the page to see the new trace.`,
+    noChange: "No change since the last state.",
+    saved: "Saved.",
+    logAdded: "Log entry added.",
+    confirmRemoveTrace: "Remove this trace from the case?",
+    traceRemoved: "Trace removed.",
+    confirmDeleteCase: "Delete the whole case?",
+    deleteFailed: "Deleting failed",
+    caseRef: (ref: string) => `Case reference ${ref}`,
+    changed: "changed",
+    report: "Report",
+    deleteCase: "Delete case",
+    sharedOn: "Shared with the team.",
+    sharedOff: "Sharing ended.",
+    shareLabel: "Share with the team (every member can see and edit this case)",
+    notes: "Notes",
+    autoRefreshOn: "Automatic refresh on.",
+    autoRefreshOff: "Off.",
+    autoRefresh: "Refresh automatically",
+    every: "every",
+    hours: "hours",
+    checking: "Checking…",
+    refreshNow: "Refresh now",
+    lastRefresh: "last",
+    refreshHint: "When there is movement, a log entry is written and a notification is sent.",
+    addrShort: "addr.",
+    newTrace: "+ New trace",
+    removeTrace: "Remove trace",
+    logTitle: "Investigation log",
+    logPlaceholder: "Add an entry",
+    unknownAuthor: "unknown",
+    noEntries: "No entries yet.",
+    manualClusters: "Manual clusters",
+  },
+  de: {
+    refreshed: (changed: number) => `${changed} Fall/Fälle mit Bewegung. Seite neu laden, um den neuen Trace zu sehen.`,
+    noChange: "Keine Änderung seit dem letzten Stand.",
+    saved: "Gespeichert.",
+    logAdded: "Protokolleintrag hinzugefügt.",
+    confirmRemoveTrace: "Diesen Trace aus dem Fall entfernen?",
+    traceRemoved: "Trace entfernt.",
+    confirmDeleteCase: "Den gesamten Fall löschen?",
+    deleteFailed: "Löschen fehlgeschlagen",
+    caseRef: (ref: string) => `Aktenzeichen ${ref}`,
+    changed: "geändert",
+    report: "Bericht",
+    deleteCase: "Fall löschen",
+    sharedOn: "Im Team geteilt.",
+    sharedOff: "Teilen beendet.",
+    shareLabel: "Im Team teilen (alle Mitglieder sehen und bearbeiten diesen Fall)",
+    notes: "Notizen",
+    autoRefreshOn: "Automatische Aktualisierung an.",
+    autoRefreshOff: "Aus.",
+    autoRefresh: "Automatisch aktualisieren",
+    every: "alle",
+    hours: "Stunden",
+    checking: "Prüfe…",
+    refreshNow: "Jetzt aktualisieren",
+    lastRefresh: "zuletzt",
+    refreshHint: "Bei Bewegung wird ein Protokolleintrag geschrieben und benachrichtigt.",
+    addrShort: "Adr.",
+    newTrace: "+ Neuer Trace",
+    removeTrace: "Trace entfernen",
+    logTitle: "Ermittlungsprotokoll",
+    logPlaceholder: "Eintrag hinzufügen",
+    unknownAuthor: "unbekannt",
+    noEntries: "Noch keine Einträge.",
+    manualClusters: "Manuelle Cluster",
+  },
+};
 
 interface CaseTrace {
   id: string;
@@ -52,6 +128,9 @@ export default function CaseWorkspace({
   canWrite: boolean;
   inTeam: boolean;
 }) {
+  const t = useT(TXT);
+  const c = useT(COMMON);
+  const fmt = useFormatters();
   const router = useRouter();
   // Alte Fälle haben nur einen Snapshot in `result`
   const initialTraces: CaseTrace[] =
@@ -92,16 +171,10 @@ export default function CaseWorkspace({
     const res = await fetch(`/api/cases/refresh?id=${data._id}`, { method: "POST" });
     const j = await res.json();
     setRefreshBusy(false);
-    setRefreshMsg(
-      res.ok
-        ? j.changed
-          ? `${j.changed} Fall/Fälle mit Bewegung. Seite neu laden, um den neuen Trace zu sehen.`
-          : "Keine Änderung seit dem letzten Stand."
-        : j.error || "Fehler",
-    );
+    setRefreshMsg(res.ok ? (j.changed ? t.refreshed(j.changed) : t.noChange) : j.error || c.error);
   }
 
-  const active = traces.find((t) => t.id === activeId);
+  const active = traces.find((tr) => tr.id === activeId);
 
   async function patch(body: Record<string, unknown>, note?: string) {
     setBusy(true);
@@ -114,10 +187,10 @@ export default function CaseWorkspace({
     const j = await res.json();
     setBusy(false);
     if (!res.ok) {
-      setMsg(j.error || "Fehler");
+      setMsg(j.error || c.error);
       return null;
     }
-    setMsg(note ?? "Gespeichert.");
+    setMsg(note ?? t.saved);
     if (j.case) {
       setTraces(j.case.traces || []);
       setLog(j.case.log || []);
@@ -127,21 +200,21 @@ export default function CaseWorkspace({
 
   async function addLogEntry() {
     if (!logText.trim()) return;
-    await patch({ addLog: logText.trim() }, "Protokolleintrag hinzugefügt.");
+    await patch({ addLog: logText.trim() }, t.logAdded);
     setLogText("");
   }
 
   async function removeTrace(id: string) {
-    if (!confirm("Diesen Trace aus dem Fall entfernen?")) return;
-    const updated = await patch({ removeTraceId: id }, "Trace entfernt.");
+    if (!confirm(t.confirmRemoveTrace)) return;
+    const updated = await patch({ removeTraceId: id }, t.traceRemoved);
     if (updated) setActiveId(updated.traces?.[0]?.id ?? "");
   }
 
   async function deleteCase() {
-    if (!confirm("Den gesamten Fall löschen?")) return;
+    if (!confirm(t.confirmDeleteCase)) return;
     const res = await fetch(`/api/cases/${data._id}`, { method: "DELETE" });
     if (res.ok) router.push("/cases");
-    else setMsg("Löschen fehlgeschlagen");
+    else setMsg(t.deleteFailed);
   }
 
   return (
@@ -158,16 +231,16 @@ export default function CaseWorkspace({
           ) : (
             <h1 className="text-lg font-semibold">{name}</h1>
           )}
-          <span className="text-xs text-gray-500">
-            Aktenzeichen {shortHash(data._id, 6)} · geändert {new Date(data.updatedAt).toLocaleString("de-DE")}
+          <span className="text-xs text-subtle">
+            {t.caseRef(shortHash(data._id, 6))} · {t.changed} {fmt.timestamp(data.updatedAt)}
           </span>
           <div className="ml-auto flex flex-wrap gap-2">
             <Link className="btn-secondary" href={`/cases/${data._id}/report`}>
-              Bericht
+              {t.report}
             </Link>
             {canWrite && (
               <button className="btn-secondary" onClick={deleteCase} disabled={busy}>
-                Fall löschen
+                {t.deleteCase}
               </button>
             )}
           </div>
@@ -179,14 +252,14 @@ export default function CaseWorkspace({
               checked={shared}
               onChange={(e) => {
                 setShared(e.target.checked);
-                patch({ shared: e.target.checked }, e.target.checked ? "Im Team geteilt." : "Teilen beendet.");
+                patch({ shared: e.target.checked }, e.target.checked ? t.sharedOn : t.sharedOff);
               }}
             />
-            Im Team teilen (alle Mitglieder sehen und bearbeiten diesen Fall)
+            {t.shareLabel}
           </label>
         )}
         <div>
-          <label className="label">Notizen</label>
+          <label className="label">{t.notes}</label>
           <textarea
             className="input"
             rows={3}
@@ -204,13 +277,13 @@ export default function CaseWorkspace({
                 checked={autoRefresh}
                 onChange={(e) => {
                   setAutoRefresh(e.target.checked);
-                  patch({ autoRefresh: e.target.checked }, e.target.checked ? "Automatische Aktualisierung an." : "Aus.");
+                  patch({ autoRefresh: e.target.checked }, e.target.checked ? t.autoRefreshOn : t.autoRefreshOff);
                 }}
               />
-              Automatisch aktualisieren
+              {t.autoRefresh}
             </label>
             <label className="flex items-center gap-1">
-              alle
+              {t.every}
               <input
                 className="input w-20 py-1"
                 type="number"
@@ -220,57 +293,59 @@ export default function CaseWorkspace({
                 onChange={(e) => setIntervalHours(Number(e.target.value))}
                 onBlur={() => interval !== data.refreshIntervalHours && patch({ refreshIntervalHours: interval })}
               />
-              Stunden
+              {t.hours}
             </label>
             <button className="btn-secondary" onClick={refreshNow} disabled={refreshBusy}>
-              {refreshBusy ? "Prüfe…" : "Jetzt aktualisieren"}
+              {refreshBusy ? t.checking : t.refreshNow}
             </button>
             {data.lastRefreshAt && (
-              <span className="text-xs text-gray-500">
-                zuletzt {new Date(data.lastRefreshAt).toLocaleString("de-DE")}
+              <span className="text-xs text-subtle">
+                {t.lastRefresh} {fmt.timestamp(data.lastRefreshAt)}
               </span>
             )}
-            {refreshMsg && <span className="text-xs text-gray-400">{refreshMsg}</span>}
-            <span className="text-xs text-gray-500">
-              Bei Bewegung wird ein Protokolleintrag geschrieben und benachrichtigt.
+            {refreshMsg && <span className="text-xs text-muted">{refreshMsg}</span>}
+            <span className="text-xs text-subtle">
+              {t.refreshHint}
             </span>
           </div>
         )}
-        {msg && <p className="text-xs text-gray-400">{msg}</p>}
+        {msg && <p className="text-xs text-muted">{msg}</p>}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            {traces.map((t) => (
+            {traces.map((tr) => (
               <button
-                key={t.id}
+                key={tr.id}
                 className={`rounded-md border px-3 py-1 text-sm ${
-                  t.id === activeId ? "border-accent bg-accent text-black" : "border-border hover:bg-white/5"
+                  tr.id === activeId ? "border-accent bg-accent text-black" : "border-border hover:bg-hover"
                 }`}
                 onClick={() => {
-                  setActiveId(t.id);
+                  setActiveId(tr.id);
                   setShowNew(false);
                 }}
               >
-                {t.name || shortHash(t.start, 6)}
-                <span className="ml-1 text-[10px] opacity-70">{t.result?.stats?.addresses ?? 0} Adr.</span>
+                {tr.name || shortHash(tr.start, 6)}
+                <span className="ml-1 text-[10px] opacity-70">
+                  {tr.result?.stats?.addresses ?? 0} {t.addrShort}
+                </span>
               </button>
             ))}
             {canWrite && (
               <button
-                className={`rounded-md border border-dashed px-3 py-1 text-sm ${showNew ? "border-accent text-accent" : "border-border"}`}
+                className={`rounded-md border border-dashed px-3 py-1 text-sm ${showNew ? "border-accent text-brand" : "border-border"}`}
                 onClick={() => {
                   setShowNew(true);
                   setActiveId("");
                 }}
               >
-                + Neuer Trace
+                {t.newTrace}
               </button>
             )}
             {active && canWrite && traces.length > 1 && (
               <button className="btn-secondary ml-auto" onClick={() => removeTrace(active.id)} disabled={busy}>
-                Trace entfernen
+                {t.removeTrace}
               </button>
             )}
           </div>
@@ -301,12 +376,12 @@ export default function CaseWorkspace({
         </div>
 
         <aside className="card h-fit space-y-3">
-          <h2 className="font-semibold">Ermittlungsprotokoll</h2>
+          <h2 className="font-semibold">{t.logTitle}</h2>
           {canWrite && (
             <div className="flex gap-2">
               <input
                 className="input"
-                placeholder="Eintrag hinzufügen"
+                placeholder={t.logPlaceholder}
                 value={logText}
                 onChange={(e) => setLogText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addLogEntry()}
@@ -319,18 +394,18 @@ export default function CaseWorkspace({
           <ul className="max-h-96 space-y-2 overflow-y-auto text-xs">
             {[...log].reverse().map((l, i) => (
               <li key={i} className="border-b border-border pb-1">
-                <div className="text-gray-500">
-                  {new Date(l.at).toLocaleString("de-DE")} · {l.author || "unbekannt"}
+                <div className="text-subtle">
+                  {fmt.timestamp(l.at)} · {l.author || t.unknownAuthor}
                 </div>
                 <div className="whitespace-pre-wrap">{l.text}</div>
               </li>
             ))}
-            {!log.length && <li className="text-gray-500">Noch keine Einträge.</li>}
+            {!log.length && <li className="text-subtle">{t.noEntries}</li>}
           </ul>
 
           {data.merges?.length > 0 && (
             <div>
-              <h3 className="font-semibold">Manuelle Cluster</h3>
+              <h3 className="font-semibold">{t.manualClusters}</h3>
               <ul className="mono space-y-1 text-[11px]">
                 {data.merges.map((g, i) => (
                   <li key={i} className="truncate" title={g.join(", ")}>

@@ -1,11 +1,89 @@
 @import "tailwindcss";
 
-:root {
+/* --------------------------------------------------------------------------
+ * Farbtoken für Hell- und Dunkelmodus.
+ *
+ * `:root` beschreibt den Dunkelmodus, damit die Seite auch ohne JavaScript
+ * aussieht wie bisher. Das Inline-Skript im `<head>` (siehe `src/lib/theme.ts`)
+ * setzt `data-theme` schon beim Parsen, deshalb greift einer der beiden
+ * Blöcke unten praktisch immer.
+ * -------------------------------------------------------------------------- */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
   --background: #0b0f17;
   --foreground: #e6e9ef;
   --panel: #121826;
   --border: #243044;
+  /* Flächenfarbe der Marke: in beiden Modi dasselbe Orange, immer mit
+     schwarzer Schrift darauf. */
   --accent: #f7931a;
+  /* Schriftfarbe der Marke: im Hellmodus dunkler, sonst zu blass. */
+  --brand: #f7931a;
+  --fg-2: #cbd5e1;
+  --muted: #94a3b8;
+  --subtle: #64748b;
+  --hover: rgb(255 255 255 / 0.06);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: #f5f6f8;
+  --foreground: #0f172a;
+  --panel: #ffffff;
+  --border: #d7dde7;
+  --accent: #f7931a;
+  --brand: #92500a;
+  --fg-2: #334155;
+  --muted: #4b5563;
+  --subtle: #6b7280;
+  --hover: rgb(15 23 42 / 0.06);
+
+  /* Die hellen Tönungen der Tailwind-Palette dienen im Dunkelmodus als
+     Schriftfarbe (Warnungen, Risiken, Bestätigungen). Auf hellem Grund sind
+     sie unlesbar, deshalb werden genau diese Stufen dunkler gelegt. Flächen
+     nutzen die Stufen ab 500 und bleiben unverändert. */
+  --color-red-200: var(--color-red-800);
+  --color-red-300: var(--color-red-700);
+  --color-red-400: var(--color-red-700);
+  --color-rose-300: var(--color-rose-700);
+  --color-orange-200: var(--color-orange-800);
+  --color-orange-300: var(--color-orange-700);
+  --color-orange-400: var(--color-orange-700);
+  --color-amber-300: var(--color-amber-700);
+  --color-amber-400: var(--color-amber-700);
+  --color-yellow-300: var(--color-yellow-700);
+  --color-yellow-400: var(--color-yellow-700);
+  --color-lime-400: var(--color-lime-700);
+  --color-green-300: var(--color-green-700);
+  --color-green-400: var(--color-green-700);
+  --color-emerald-300: var(--color-emerald-700);
+  --color-emerald-400: var(--color-emerald-700);
+  --color-teal-300: var(--color-teal-700);
+  --color-cyan-300: var(--color-cyan-700);
+  --color-cyan-400: var(--color-cyan-700);
+  --color-sky-300: var(--color-sky-700);
+  --color-blue-300: var(--color-blue-700);
+  --color-blue-400: var(--color-blue-600);
+  --color-indigo-300: var(--color-indigo-700);
+  --color-violet-300: var(--color-violet-700);
+  --color-purple-300: var(--color-purple-700);
+  --color-pink-300: var(--color-pink-700);
+
+  /* Sehr dunkle Tönungen dienen als getönte Warnflächen (`bg-red-950/40`)
+     und werden im Hellmodus zu einer zarten Tönung. */
+  --color-red-950: var(--color-red-100);
+  --color-orange-950: var(--color-orange-100);
+  --color-yellow-950: var(--color-yellow-100);
+}
+
+/* „system“ folgt der Einstellung des Betriebssystems. Das Inline-Skript löst
+   das bereits zu `light`/`dark` auf; diese Regel greift, falls es nicht läuft. */
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+  }
 }
 
 @theme inline {
@@ -14,6 +92,11 @@
   --color-panel: var(--panel);
   --color-border: var(--border);
   --color-accent: var(--accent);
+  --color-brand: var(--brand);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-hover: var(--hover);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -31,13 +114,13 @@ body {
   @apply inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-black hover:brightness-110 disabled:opacity-50;
 }
 .btn-secondary {
-  @apply inline-flex items-center gap-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm hover:bg-white/5 disabled:opacity-50;
+  @apply inline-flex items-center gap-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm hover:bg-hover disabled:opacity-50;
 }
 .input {
   @apply w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent;
 }
 .label {
-  @apply mb-1 block text-xs uppercase tracking-wide text-gray-400;
+  @apply mb-1 block text-xs uppercase tracking-wide text-muted;
 }
 .mono {
   font-family: var(--font-geist-mono), ui-monospace, monospace;
@@ -63,8 +146,22 @@ body {
   }
 }
 
-/* Druckausgabe: dunkles Design zurücknehmen */
+/* Druckausgabe: immer auf hellem Grund, unabhängig vom gewählten Modus */
 @media print {
+  /* Auch `:root[data-theme]` treffen, sonst gewinnt der Dunkelmodus über die
+     höhere Spezifität und der Ausdruck bliebe dunkel. */
+  :root,
+  :root[data-theme] {
+    color-scheme: light;
+    --background: #ffffff;
+    --foreground: #000000;
+    --panel: #ffffff;
+    --border: #cccccc;
+    --brand: #92500a;
+    --fg-2: #222222;
+    --muted: #333333;
+    --subtle: #555555;
+  }
   body {
     background: #fff !important;
     color: #000 !important;

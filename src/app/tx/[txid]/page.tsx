@@ -5,10 +5,69 @@ import { getRequestContext } from "@/lib/auth";
 import { getTx } from "@/lib/providers/registry";
 import { lightningForTx } from "@/lib/providers/lightning";
 import { getPriceSeries, priceAt } from "@/lib/providers/price";
-import { formatAmount, formatDate, formatFiat, shortHash } from "@/lib/format";
+import { shortHash } from "@/lib/format";
 import { chainMeta, isChainTxid, isChainId, DEFAULT_CHAIN, type ChainId } from "@/lib/chains";
+import { getFormatters, getLocale, getT } from "@/lib/i18n/server";
+import { translateHint } from "@/lib/i18n/hints";
 
 export const dynamic = "force-dynamic";
+
+const TXT = {
+  en: {
+    heading: "Transaction",
+    traceCoins: "Trace the coins",
+    traceOrigin: "Trace the origin",
+    status: "Status",
+    failed: "Failed",
+    confirmed: "Confirmed",
+    block: (height: number) => ` · block ${height}`,
+    unconfirmed: "Unconfirmed (mempool)",
+    time: "Time",
+    fee: "Fee",
+    valueThen: "Value then",
+    source: "Source",
+    lightningTitle: "⚡ Lightning channel",
+    channelOpened: "Channel opened",
+    channelClosed: "Channel closed",
+    capacity: "capacity",
+    channelStatus: "status",
+    inputs: (n: number) => `Inputs (${n})`,
+    outputs: (n: number) => `Outputs (${n})`,
+    coinbase: "⛏ Coinbase (newly mined)",
+    unknown: "unknown",
+    noRecipient: "no recipient",
+    internal: "internal",
+    spent: "spent →",
+    unspent: "unspent",
+  },
+  de: {
+    heading: "Transaktion",
+    traceCoins: "Coins verfolgen",
+    traceOrigin: "Herkunft verfolgen",
+    status: "Status",
+    failed: "Fehlgeschlagen",
+    confirmed: "Bestätigt",
+    block: (height: number) => ` · Block ${height}`,
+    unconfirmed: "Unbestätigt (Mempool)",
+    time: "Zeit",
+    fee: "Gebühr",
+    valueThen: "Wert damals",
+    source: "Quelle",
+    lightningTitle: "⚡ Lightning-Kanal",
+    channelOpened: "Kanal geöffnet",
+    channelClosed: "Kanal geschlossen",
+    capacity: "Kapazität",
+    channelStatus: "Status",
+    inputs: (n: number) => `Eingänge (${n})`,
+    outputs: (n: number) => `Ausgänge (${n})`,
+    coinbase: "⛏ Coinbase (neu geschürft)",
+    unknown: "unbekannt",
+    noRecipient: "kein Empfänger",
+    internal: "intern",
+    spent: "ausgegeben →",
+    unspent: "unausgegeben",
+  },
+};
 
 export default async function TxPage({
   params,
@@ -23,9 +82,11 @@ export default async function TxPage({
   if (!isChainTxid(txid, chain)) notFound();
   const { ctx, session } = await getRequestContext({ chain });
   const meta = chainMeta(chain);
+  const t = await getT(TXT);
+  const fmt = await getFormatters();
 
   const [r, lightning] = await Promise.all([getTx(ctx, txid).catch((e: Error) => e), lightningForTx(txid, chain)]);
-  if (r instanceof Error) return <div className="card text-red-300">{r.message}</div>;
+  if (r instanceof Error) return <div className="card text-red-300">{translateHint(r.message, await getLocale())}</div>;
   const tx = r.data;
   const totalIn = tx.inputs.reduce((s, i) => s + (i.valueSat || 0), 0);
   const totalOut = tx.outputs.reduce((s, o) => s + o.valueSat, 0);
@@ -35,57 +96,57 @@ export default async function TxPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Transaktion</h1>
-        <span className="rounded bg-panel px-2 py-0.5 text-xs text-accent">{meta.name}</span>
+        <h1 className="text-lg font-semibold">{t.heading}</h1>
+        <span className="rounded bg-panel px-2 py-0.5 text-xs text-brand">{meta.name}</span>
         <span className="mono break-all text-sm">{tx.txid}</span>
         <div className="ml-auto flex flex-wrap gap-2">
           <Link href={`/trace?start=${tx.txid}&chain=${chain}&direction=forward&mode=utxo`} className="btn">
-            Coins verfolgen
+            {t.traceCoins}
           </Link>
           <Link href={`/trace?start=${tx.txid}&chain=${chain}&direction=backward`} className="btn-secondary">
-            Herkunft verfolgen
+            {t.traceOrigin}
           </Link>
         </div>
       </div>
 
       <div className="card grid gap-2 text-sm md:grid-cols-5">
         <div>
-          <span className="label">Status</span>
+          <span className="label">{t.status}</span>
           {tx.failed ? (
-            <span className="text-red-400">Fehlgeschlagen</span>
+            <span className="text-red-400">{t.failed}</span>
           ) : tx.confirmed ? (
-            `Bestätigt${tx.blockHeight ? ` · Block ${tx.blockHeight}` : ""}`
+            `${t.confirmed}${tx.blockHeight ? t.block(tx.blockHeight) : ""}`
           ) : (
-            "Unbestätigt (Mempool)"
+            t.unconfirmed
           )}
         </div>
         <div>
-          <span className="label">Zeit</span>
-          {formatDate(tx.blockTime)}
+          <span className="label">{t.time}</span>
+          {fmt.date(tx.blockTime)}
         </div>
         <div>
-          <span className="label">Gebühr</span>
-          {formatAmount(tx.feeSat, chain)}{" "}
-          {tx.size && tx.feeSat ? `(${(tx.feeSat / tx.size).toFixed(1)} ${meta.unit}/B)` : ""}
+          <span className="label">{t.fee}</span>
+          {fmt.amount(tx.feeSat, chain)}{" "}
+          {tx.size && tx.feeSat ? `(${fmt.number(tx.feeSat / tx.size, 1)} ${meta.unit}/B)` : ""}
         </div>
         <div>
-          <span className="label">Wert damals</span>
-          {then ? formatFiat(totalOut, then, chain) : "–"}
+          <span className="label">{t.valueThen}</span>
+          {then ? fmt.fiat(totalOut, then, chain) : "–"}
         </div>
         <div>
-          <span className="label">Quelle</span>
+          <span className="label">{t.source}</span>
           {tx.provider}
         </div>
       </div>
 
       {lightning.length > 0 && (
         <div className="card border-sky-500/50">
-          <h2 className="mb-1 font-semibold text-sky-300">⚡ Lightning-Kanal</h2>
+          <h2 className="mb-1 font-semibold text-sky-300">{t.lightningTitle}</h2>
           {lightning.map((c) => (
             <div key={c.id} className="text-sm">
-              {c.role === "funding" ? "Kanal geöffnet" : "Kanal geschlossen"} · Kapazität{" "}
-              {formatAmount(c.capacitySat, chain)} · Status {c.status}
-              <div className="text-xs text-gray-400">
+              {c.role === "funding" ? t.channelOpened : t.channelClosed} · {t.capacity}{" "}
+              {fmt.amount(c.capacitySat, chain)} · {t.channelStatus} {c.status}
+              <div className="text-xs text-muted">
                 {c.nodes.map((n) => n.alias || shortHash(n.pubkey, 8)).join(" ↔ ")}
                 {c.shortId ? ` · ${c.shortId}` : ""}
               </div>
@@ -107,42 +168,42 @@ export default async function TxPage({
       <div className="grid gap-4 md:grid-cols-2">
         <div className="card">
           <h2 className="mb-2 font-semibold">
-            Eingänge ({tx.inputs.length}) · {formatAmount(totalIn, chain)}
+            {t.inputs(tx.inputs.length)} · {fmt.amount(totalIn, chain)}
           </h2>
           <ul className="space-y-1 text-sm">
             {tx.inputs.map((i, k) => (
               <li key={k} className="flex justify-between gap-2 border-t border-border py-1">
                 {i.coinbase ? (
-                  <span className="text-green-400">⛏ Coinbase (neu geschürft)</span>
+                  <span className="text-green-400">{t.coinbase}</span>
                 ) : i.address ? (
-                  <Link href={`/address/${i.address}?chain=${chain}`} className="mono text-xs hover:text-accent">
+                  <Link href={`/address/${i.address}?chain=${chain}`} className="mono text-xs hover:text-brand">
                     {shortHash(i.address, 12)}
                   </Link>
                 ) : (
-                  <span className="text-gray-500">unbekannt</span>
+                  <span className="text-subtle">{t.unknown}</span>
                 )}
-                <span>{formatAmount(i.valueSat, chain)}</span>
+                <span>{fmt.amount(i.valueSat, chain)}</span>
               </li>
             ))}
           </ul>
         </div>
         <div className="card">
           <h2 className="mb-2 font-semibold">
-            Ausgänge ({tx.outputs.length}) · {formatAmount(totalOut, chain)}
+            {t.outputs(tx.outputs.length)} · {fmt.amount(totalOut, chain)}
           </h2>
           <ul className="space-y-1 text-sm">
             {tx.outputs.map((o) => (
               <li key={o.n} className="flex justify-between gap-2 border-t border-border py-1">
                 <span className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">#{o.n}</span>
+                  <span className="text-xs text-subtle">#{o.n}</span>
                   {o.address ? (
-                    <Link href={`/address/${o.address}?chain=${chain}`} className="mono text-xs hover:text-accent">
+                    <Link href={`/address/${o.address}?chain=${chain}`} className="mono text-xs hover:text-brand">
                       {shortHash(o.address, 12)}
                     </Link>
                   ) : (
-                    <span className="text-gray-500">{o.scriptType || "kein Empfänger"}</span>
+                    <span className="text-subtle">{o.scriptType || t.noRecipient}</span>
                   )}
-                  {o.internal && <span className="text-[10px] text-gray-500">intern</span>}
+                  {o.internal && <span className="text-[10px] text-subtle">{t.internal}</span>}
                 </span>
                 <span className="text-right">
                   {o.token ? (
@@ -150,15 +211,15 @@ export default async function TxPage({
                       {o.token.amount} {o.token.symbol}
                     </span>
                   ) : (
-                    formatAmount(o.valueSat, chain)
+                    fmt.amount(o.valueSat, chain)
                   )}
                   <div className="text-xs">
                     {o.spent === true && o.spentTxid ? (
-                      <Link href={`/tx/${o.spentTxid}?chain=${chain}`} className="text-gray-400 hover:text-accent">
-                        ausgegeben → {shortHash(o.spentTxid, 5)}
+                      <Link href={`/tx/${o.spentTxid}?chain=${chain}`} className="text-muted hover:text-brand">
+                        {t.spent} {shortHash(o.spentTxid, 5)}
                       </Link>
                     ) : o.spent === false ? (
-                      <span className="text-green-400">unausgegeben</span>
+                      <span className="text-green-400">{t.unspent}</span>
                     ) : null}
                   </div>
                 </span>

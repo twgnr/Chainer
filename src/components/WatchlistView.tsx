@@ -3,7 +3,110 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { CHAIN_LIST, type ChainId } from "@/lib/chains";
-import { formatAmount, shortHash } from "@/lib/format";
+import { shortHash } from "@/lib/format";
+import { useFormatters, useT } from "@/lib/i18n/provider";
+import { COMMON } from "@/lib/i18n/labels";
+
+const TXT = {
+  en: {
+    loadFailed: "Loading failed.",
+    networkError: "Network error while loading the watchlist.",
+    addFailed: "Adding failed.",
+    added: "This address is now being watched.",
+    changeFailed: "The change failed.",
+    confirmDelete: "Really delete this watch?",
+    deleteFailed: "Deleting failed.",
+    invalidResponse: "Invalid response.",
+    checkFailed: "The check failed.",
+    checkResult: (checked: number, changed: number, notified: number) =>
+      `${checked} checked, ${changed} with a change, ${notified} notification${notified === 1 ? "" : "s"} sent.`,
+    saveFailed: "Saving failed.",
+    notifySaved: "Notification settings saved.",
+    unreadEvents: (n: number) => `${n} unread event${n === 1 ? "" : "s"}`,
+    noUnread: "No unread events",
+    checkNow: "Check now",
+    autoCheck: (minutes: number) => `Automatic check every ${minutes} minutes.`,
+    autoCheckOff:
+      "Automatic checking is inactive – set WATCH_INTERVAL_MINUTES or point a cron service at /api/watch/check with CRON_SECRET.",
+    addTitle: "Watch an address",
+    addressPlaceholder: "bc1…",
+    labelPlaceholder: "e.g. exchange wallet",
+    minAmount: (unit: string) => `Minimum amount (${unit})`,
+    minAmountHint: (unit: string) =>
+      `The minimum amount is given in the smallest unit of the chain (${unit}). 0 reports every movement.`,
+    watch: "Watch",
+    watchedTitle: "Watched addresses",
+    empty: "No addresses in the watchlist yet.",
+    colBalance: "Balance",
+    colLastCheck: "Last check",
+    colStatus: "Status",
+    noLabel: "(no name)",
+    unreadTitle: (n: number) => `${n} unread`,
+    errorPrefix: "Error:",
+    active: "active",
+    paused: "paused",
+    events: "Events",
+    markRead: "Mark as read",
+    noEvents: "No events yet.",
+    notifyTitle: "Notifications",
+    emailToAccount: "Send email to my account address",
+    emailNotConfigured: "Email delivery is not configured – set SMTP_HOST and SMTP_FROM.",
+    telegramChatId: "Telegram chat ID",
+    telegramPlaceholder: "e.g. 123456789",
+    telegramNotConfigured: "Telegram is not configured – set TELEGRAM_BOT_TOKEN.",
+    webhookUrl: "Webhook URL",
+    webhookHint: "Events are sent as JSON by POST to this URL. Leave empty to switch it off.",
+  },
+  de: {
+    loadFailed: "Laden fehlgeschlagen.",
+    networkError: "Netzwerkfehler beim Laden der Watchlist.",
+    addFailed: "Hinzufügen fehlgeschlagen.",
+    added: "Adresse wird jetzt beobachtet.",
+    changeFailed: "Änderung fehlgeschlagen.",
+    confirmDelete: "Beobachtung wirklich löschen?",
+    deleteFailed: "Löschen fehlgeschlagen.",
+    invalidResponse: "Ungültige Antwort.",
+    checkFailed: "Prüfung fehlgeschlagen.",
+    checkResult: (checked: number, changed: number, notified: number) =>
+      `${checked} geprüft, ${changed} mit Veränderung, ${notified} Benachrichtigung(en) versendet.`,
+    saveFailed: "Speichern fehlgeschlagen.",
+    notifySaved: "Benachrichtigungseinstellungen gespeichert.",
+    unreadEvents: (n: number) => `${n} ungelesene Ereignisse`,
+    noUnread: "Keine ungelesenen Ereignisse",
+    checkNow: "Jetzt prüfen",
+    autoCheck: (minutes: number) => `Automatische Prüfung alle ${minutes} Minuten.`,
+    autoCheckOff:
+      "Automatische Prüfung inaktiv – WATCH_INTERVAL_MINUTES setzen oder einen Cron-Dienst auf /api/watch/check mit CRON_SECRET einrichten.",
+    addTitle: "Adresse beobachten",
+    addressPlaceholder: "bc1…",
+    labelPlaceholder: "z. B. Börsen-Wallet",
+    minAmount: (unit: string) => `Mindestbetrag (${unit})`,
+    minAmountHint: (unit: string) =>
+      `Der Mindestbetrag wird in der kleinsten Einheit der Chain angegeben (${unit}). 0 meldet jede Bewegung.`,
+    watch: "Beobachten",
+    watchedTitle: "Beobachtete Adressen",
+    empty: "Noch keine Adressen in der Watchlist.",
+    colBalance: "Saldo",
+    colLastCheck: "Letzte Prüfung",
+    colStatus: "Status",
+    noLabel: "(ohne Bezeichnung)",
+    unreadTitle: (n: number) => `${n} ungelesen`,
+    errorPrefix: "Fehler:",
+    active: "aktiv",
+    paused: "pausiert",
+    events: "Ereignisse",
+    markRead: "Als gelesen markieren",
+    noEvents: "Noch keine Ereignisse.",
+    notifyTitle: "Benachrichtigungen",
+    emailToAccount: "E-Mail an meine Kontoadresse senden",
+    emailNotConfigured: "E-Mail-Versand nicht konfiguriert – SMTP_HOST und SMTP_FROM setzen.",
+    telegramChatId: "Telegram-Chat-ID",
+    telegramPlaceholder: "z. B. 123456789",
+    telegramNotConfigured: "Telegram nicht konfiguriert – TELEGRAM_BOT_TOKEN setzen.",
+    webhookUrl: "Webhook-URL",
+    webhookHint: "Ereignisse werden als JSON per POST an diese URL geschickt. Leer lassen zum Deaktivieren.",
+  },
+};
 
 interface WatchEvent {
   at: string;
@@ -57,19 +160,15 @@ interface CheckResponse {
   error?: string;
 }
 
-/** Zeitstempel der API sind ISO-Strings, daher lokale Formatierung statt formatDate */
-function formatIso(iso?: string): string {
-  if (!iso) return "–";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "–" : d.toLocaleString("de-DE");
-}
-
 /** Name der kleinsten Einheit einer Chain (sat, litoshi, wei …) */
 function unitOf(chain: ChainId): string {
   return CHAIN_LIST.find((c) => c.id === chain)?.unit ?? "sat";
 }
 
 export default function WatchlistView() {
+  const t = useT(TXT);
+  const c = useT(COMMON);
+  const fmt = useFormatters();
   const [data, setData] = useState<WatchResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -92,7 +191,7 @@ export default function WatchlistView() {
       const res = await fetch("/api/watch");
       const json: WatchResponse = await res.json();
       if (!res.ok) {
-        setErr(json.error ?? "Laden fehlgeschlagen.");
+        setErr(json.error ?? t.loadFailed);
         return;
       }
       setErr(null);
@@ -101,13 +200,13 @@ export default function WatchlistView() {
       setTelegramChatId(json.notify?.telegramChatId ?? "");
       setWebhookUrl(json.notify?.webhookUrl ?? "");
     } catch {
-      setErr("Netzwerkfehler beim Laden der Watchlist.");
+      setErr(t.networkError);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    const t = setTimeout(load, 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
   }, [load]);
 
   async function add(e: React.FormEvent) {
@@ -126,11 +225,11 @@ export default function WatchlistView() {
       }),
     });
     const json: { ok?: boolean; error?: string } = await res.json().catch(() => ({}));
-    if (!res.ok) setErr(json.error ?? "Hinzufügen fehlgeschlagen.");
+    if (!res.ok) setErr(json.error ?? t.addFailed);
     else {
       setAddress("");
       setLabel("");
-      setMsg("Adresse wird jetzt beobachtet.");
+      setMsg(t.added);
       await load();
     }
     setBusy(false);
@@ -145,19 +244,19 @@ export default function WatchlistView() {
       body: JSON.stringify(body),
     });
     const json: { error?: string } = await res.json().catch(() => ({}));
-    if (!res.ok) setErr(json.error ?? "Änderung fehlgeschlagen.");
+    if (!res.ok) setErr(json.error ?? t.changeFailed);
     else await load();
     setBusy(false);
   }
 
   async function remove(id: string) {
-    if (!confirm("Beobachtung wirklich löschen?")) return;
+    if (!confirm(t.confirmDelete)) return;
     setBusy(true);
     setErr(null);
     const res = await fetch(`/api/watch/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const json: { error?: string } = await res.json().catch(() => ({}));
-      setErr(json.error ?? "Löschen fehlgeschlagen.");
+      setErr(json.error ?? t.deleteFailed);
     } else await load();
     setBusy(false);
   }
@@ -172,13 +271,11 @@ export default function WatchlistView() {
       changed: 0,
       notified: 0,
       errors: [],
-      error: "Ungültige Antwort.",
+      error: t.invalidResponse,
     }));
-    if (!res.ok) setErr(json.error ?? "Prüfung fehlgeschlagen.");
+    if (!res.ok) setErr(json.error ?? t.checkFailed);
     else {
-      setMsg(
-        `${json.checked} geprüft, ${json.changed} mit Veränderung, ${json.notified} Benachrichtigung(en) versendet.`,
-      );
+      setMsg(t.checkResult(json.checked, json.changed, json.notified));
       if (json.errors?.length) setErr(json.errors.map((x) => `${x.address}: ${x.error}`).join(" | "));
       await load();
     }
@@ -196,50 +293,48 @@ export default function WatchlistView() {
       body: JSON.stringify({ email, telegramChatId, webhookUrl }),
     });
     const json: { error?: string } = await res.json().catch(() => ({}));
-    if (!res.ok) setErr(json.error ?? "Speichern fehlgeschlagen.");
+    if (!res.ok) setErr(json.error ?? t.saveFailed);
     else {
-      setMsg("Benachrichtigungseinstellungen gespeichert.");
+      setMsg(t.notifySaved);
       await load();
     }
     setBusy(false);
   }
 
   if (err && !data) return <div className="card text-yellow-400">{err}</div>;
-  if (!data) return <p className="text-gray-500">Lade…</p>;
+  if (!data) return <p className="text-subtle">{c.loading}</p>;
 
   const unread = data.watches.reduce((sum, w) => sum + w.events.filter((ev) => !ev.read).length, 0);
 
   return (
     <div className="space-y-4">
       {err && <div className="card text-yellow-400">{err}</div>}
-      {msg && <div className="card text-sm text-gray-300">{msg}</div>}
+      {msg && <div className="card text-sm text-fg-2">{msg}</div>}
 
       <div className="card space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm">
             {unread > 0 ? (
-              <span className="text-accent">{unread} ungelesene Ereignisse</span>
+              <span className="text-brand">{t.unreadEvents(unread)}</span>
             ) : (
-              <span className="text-gray-400">Keine ungelesenen Ereignisse</span>
+              <span className="text-muted">{t.noUnread}</span>
             )}
           </div>
           <button className="btn" onClick={checkNow} disabled={busy}>
-            Jetzt prüfen
+            {t.checkNow}
           </button>
         </div>
-        <p className="text-xs text-gray-500">
-          {data.intervalMinutes > 0
-            ? `Automatische Prüfung alle ${data.intervalMinutes} Minuten.`
-            : "Automatische Prüfung inaktiv – WATCH_INTERVAL_MINUTES setzen oder einen Cron-Dienst auf /api/watch/check mit CRON_SECRET einrichten."}
+        <p className="text-xs text-subtle">
+          {data.intervalMinutes > 0 ? t.autoCheck(data.intervalMinutes) : t.autoCheckOff}
         </p>
       </div>
 
       <form onSubmit={add} className="card space-y-3">
-        <h2 className="font-semibold">Adresse beobachten</h2>
+        <h2 className="font-semibold">{t.addTitle}</h2>
         <div className="grid gap-3 md:grid-cols-4">
           <div>
             <label className="label" htmlFor="watch-chain">
-              Chain
+              {c.chain}
             </label>
             <select
               id="watch-chain"
@@ -257,14 +352,14 @@ export default function WatchlistView() {
           </div>
           <div>
             <label className="label" htmlFor="watch-address">
-              Adresse
+              {c.address}
             </label>
             <input
               id="watch-address"
               className="input mono"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="bc1…"
+              placeholder={t.addressPlaceholder}
               autoComplete="off"
               required
               disabled={busy}
@@ -272,20 +367,20 @@ export default function WatchlistView() {
           </div>
           <div>
             <label className="label" htmlFor="watch-label">
-              Bezeichnung
+              {c.label}
             </label>
             <input
               id="watch-label"
               className="input"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="z. B. Börsen-Wallet"
+              placeholder={t.labelPlaceholder}
               disabled={busy}
             />
           </div>
           <div>
             <label className="label" htmlFor="watch-min">
-              Mindestbetrag ({unitOf(chain)})
+              {t.minAmount(unitOf(chain))}
             </label>
             <input
               id="watch-min"
@@ -298,29 +393,29 @@ export default function WatchlistView() {
             />
           </div>
         </div>
-        <p className="text-xs text-gray-500">
-          Der Mindestbetrag wird in der kleinsten Einheit der Chain angegeben ({unitOf(chain)}). 0 meldet jede Bewegung.
+        <p className="text-xs text-subtle">
+          {t.minAmountHint(unitOf(chain))}
         </p>
         <button className="btn" disabled={busy}>
-          Beobachten
+          {t.watch}
         </button>
       </form>
 
       <div className="card">
-        <h2 className="mb-2 font-semibold">Beobachtete Adressen</h2>
+        <h2 className="mb-2 font-semibold">{t.watchedTitle}</h2>
         {!data.watches.length ? (
-          <p className="text-sm text-gray-400">Noch keine Adressen in der Watchlist.</p>
+          <p className="text-sm text-muted">{t.empty}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-gray-500">
+              <thead className="text-left text-xs uppercase text-subtle">
                 <tr>
-                  <th className="py-1">Bezeichnung</th>
-                  <th>Adresse</th>
-                  <th>Chain</th>
-                  <th>Saldo</th>
-                  <th>Letzte Prüfung</th>
-                  <th>Status</th>
+                  <th className="py-1">{c.label}</th>
+                  <th>{c.address}</th>
+                  <th>{c.chain}</th>
+                  <th>{t.colBalance}</th>
+                  <th>{t.colLastCheck}</th>
+                  <th>{t.colStatus}</th>
                   <th />
                 </tr>
               </thead>
@@ -332,38 +427,40 @@ export default function WatchlistView() {
                       <tr className="border-t border-border align-top">
                         <td className="py-2">
                           <button
-                            className="text-left font-medium hover:text-accent"
+                            className="text-left font-medium hover:text-brand"
                             onClick={() => setOpen((o) => ({ ...o, [w._id]: !o[w._id] }))}
                           >
-                            {open[w._id] ? "▾" : "▸"} {w.label || "(ohne Bezeichnung)"}
+                            {open[w._id] ? "▾" : "▸"} {w.label || t.noLabel}
                           </button>
                           {wUnread > 0 && (
-                            <span className="ml-2 text-accent" title={`${wUnread} ungelesen`}>
+                            <span className="ml-2 text-brand" title={t.unreadTitle(wUnread)}>
                               ● {wUnread}
                             </span>
                           )}
-                          {w.lastError && <div className="text-xs text-yellow-400">Fehler: {w.lastError}</div>}
+                          {w.lastError && <div className="text-xs text-yellow-400">
+                              {t.errorPrefix} {w.lastError}
+                            </div>}
                         </td>
                         <td className="mono text-xs">
-                          <Link href={`/address/${w.address}?chain=${w.chain}`} className="hover:text-accent">
+                          <Link href={`/address/${w.address}?chain=${w.chain}`} className="hover:text-brand">
                             {shortHash(w.address, 8)}
                           </Link>
                         </td>
                         <td>{CHAIN_LIST.find((c) => c.id === w.chain)?.name ?? w.chain}</td>
-                        <td className="mono text-xs">{formatAmount(w.lastBalanceSat, w.chain)}</td>
-                        <td className="text-gray-400">{formatIso(w.lastCheckedAt)}</td>
+                        <td className="mono text-xs">{fmt.amount(w.lastBalanceSat, w.chain)}</td>
+                        <td className="text-muted">{fmt.timestamp(w.lastCheckedAt)}</td>
                         <td>
                           <button
                             className="btn-secondary"
                             disabled={busy}
                             onClick={() => patch(w._id, { active: !w.active })}
                           >
-                            {w.active ? "aktiv" : "pausiert"}
+                            {w.active ? t.active : t.paused}
                           </button>
                         </td>
                         <td className="text-right">
                           <button className="btn-secondary" disabled={busy} onClick={() => remove(w._id)}>
-                            Löschen
+                            {c.delete}
                           </button>
                         </td>
                       </tr>
@@ -371,31 +468,31 @@ export default function WatchlistView() {
                         <tr className="border-t border-border">
                           <td colSpan={7} className="py-2">
                             <div className="mb-2 flex items-center gap-3">
-                              <span className="text-xs uppercase tracking-wide text-gray-500">Ereignisse</span>
+                              <span className="text-xs uppercase tracking-wide text-subtle">{t.events}</span>
                               <button
                                 className="btn-secondary"
                                 disabled={busy || wUnread === 0}
                                 onClick={() => patch(w._id, { markRead: true })}
                               >
-                                Als gelesen markieren
+                                {t.markRead}
                               </button>
                             </div>
                             {!w.events.length ? (
-                              <p className="text-sm text-gray-500">Noch keine Ereignisse.</p>
+                              <p className="text-sm text-subtle">{t.noEvents}</p>
                             ) : (
                               <ul className="space-y-1">
                                 {w.events.map((ev, i) => (
                                   <li key={`${ev.txid}-${i}`} className="flex flex-wrap items-center gap-2 text-sm">
-                                    <span className={ev.read ? "text-transparent" : "text-accent"}>●</span>
-                                    <span className="text-gray-400">{formatIso(ev.at)}</span>
+                                    <span className={ev.read ? "text-transparent" : "text-brand"}>●</span>
+                                    <span className="text-muted">{fmt.timestamp(ev.at)}</span>
                                     <span>{ev.text}</span>
-                                    <span className="mono text-xs text-gray-400">
-                                      {formatAmount(ev.deltaSat, w.chain)}
+                                    <span className="mono text-xs text-muted">
+                                      {fmt.amount(ev.deltaSat, w.chain)}
                                     </span>
                                     {ev.txid && (
                                       <Link
                                         href={`/tx/${ev.txid}?chain=${w.chain}`}
-                                        className="mono text-xs hover:text-accent"
+                                        className="mono text-xs hover:text-brand"
                                       >
                                         {shortHash(ev.txid, 8)}
                                       </Link>
@@ -417,7 +514,7 @@ export default function WatchlistView() {
       </div>
 
       <form onSubmit={saveNotify} className="card space-y-3">
-        <h2 className="font-semibold">Benachrichtigungen</h2>
+        <h2 className="font-semibold">{t.notifyTitle}</h2>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -425,14 +522,14 @@ export default function WatchlistView() {
             onChange={(e) => setEmail(e.target.checked)}
             disabled={busy || !data.channels.email}
           />
-          <span className={data.channels.email ? "" : "text-gray-500"}>E-Mail an meine Kontoadresse senden</span>
+          <span className={data.channels.email ? "" : "text-subtle"}>{t.emailToAccount}</span>
         </label>
         {!data.channels.email && (
-          <p className="text-xs text-gray-500">E-Mail-Versand nicht konfiguriert – SMTP_HOST und SMTP_FROM setzen.</p>
+          <p className="text-xs text-subtle">{t.emailNotConfigured}</p>
         )}
         <div>
           <label className="label" htmlFor="notify-telegram">
-            Telegram-Chat-ID
+            {t.telegramChatId}
           </label>
           <input
             id="notify-telegram"
@@ -440,16 +537,16 @@ export default function WatchlistView() {
             value={telegramChatId}
             onChange={(e) => setTelegramChatId(e.target.value)}
             disabled={busy || !data.channels.telegram}
-            placeholder="z. B. 123456789"
+            placeholder={t.telegramPlaceholder}
             autoComplete="off"
           />
           {!data.channels.telegram && (
-            <p className="mt-1 text-xs text-gray-500">Telegram nicht konfiguriert – TELEGRAM_BOT_TOKEN setzen.</p>
+            <p className="mt-1 text-xs text-subtle">{t.telegramNotConfigured}</p>
           )}
         </div>
         <div>
           <label className="label" htmlFor="notify-webhook">
-            Webhook-URL
+            {t.webhookUrl}
           </label>
           <input
             id="notify-webhook"
@@ -460,12 +557,12 @@ export default function WatchlistView() {
             placeholder="https://…"
             autoComplete="off"
           />
-          <p className="mt-1 text-xs text-gray-500">
-            Ereignisse werden als JSON per POST an diese URL geschickt. Leer lassen zum Deaktivieren.
+          <p className="mt-1 text-xs text-subtle">
+            {t.webhookHint}
           </p>
         </div>
         <button className="btn" disabled={busy}>
-          Speichern
+          {c.save}
         </button>
       </form>
     </div>

@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ChainId } from "@/lib/chains";
+import { useT } from "@/lib/i18n/provider";
+import { CATEGORY_LABEL, COMMON, RISK_LABEL, RISK_NONE, SELECTABLE_CATEGORIES } from "@/lib/i18n/labels";
 
 interface Annotation {
   _id: string;
@@ -13,20 +15,28 @@ interface Annotation {
   shared: boolean;
 }
 
-const CATEGORIES: [string, string][] = [
-  ["custom", "Eigene"],
-  ["exchange", "Börse"],
-  ["mixer", "Mixer"],
-  ["scam", "Betrug"],
-  ["sanctioned", "Sanktioniert"],
-  ["ransomware", "Ransomware"],
-  ["darknet", "Darknet"],
-  ["gambling", "Glücksspiel"],
-  ["mining", "Mining"],
-  ["service", "Dienst"],
-  ["wallet", "Wallet"],
-  ["other", "Sonstiges"],
-];
+const TXT = {
+  en: {
+    loginHint: "for your own labels, notes and the watchlist.",
+    login: "Log in",
+    titleNew: "Create your own label",
+    titleEdit: "Edit your own label",
+    saved: "Label saved.",
+    watchAdded: "Added to the watchlist.",
+    watch: "Watch",
+    watchlist: "Watchlist",
+  },
+  de: {
+    loginHint: "für eigene Labels, Notizen und die Watchlist.",
+    login: "Einloggen",
+    titleNew: "Eigenes Label anlegen",
+    titleEdit: "Eigenes Label bearbeiten",
+    saved: "Label gespeichert.",
+    watchAdded: "Zur Watchlist hinzugefügt.",
+    watch: "Beobachten",
+    watchlist: "Watchlist",
+  },
+};
 
 /** Eigenes Label anlegen und Adresse zur Watchlist hinzufügen. */
 export default function AddressActions({
@@ -38,6 +48,11 @@ export default function AddressActions({
   chain: ChainId;
   loggedIn: boolean;
 }) {
+  const t = useT(TXT);
+  const c = useT(COMMON);
+  const categoryName = useT(CATEGORY_LABEL);
+  const riskName = useT(RISK_LABEL);
+  const riskNone = useT(RISK_NONE);
   const [existing, setExisting] = useState<Annotation | null>(null);
   const [label, setLabel] = useState("");
   const [category, setCategory] = useState("custom");
@@ -66,17 +81,17 @@ export default function AddressActions({
         /* ignorieren */
       }
     };
-    const t = setTimeout(load, 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
   }, [address, loggedIn]);
 
   if (!loggedIn) {
     return (
-      <div className="card text-sm text-gray-400">
-        <Link href="/login" className="text-accent">
-          Einloggen
+      <div className="card text-sm text-muted">
+        <Link href="/login" className="text-brand">
+          {t.login}
         </Link>{" "}
-        für eigene Labels, Notizen und die Watchlist.
+        {t.loginHint}
       </div>
     );
   }
@@ -92,7 +107,7 @@ export default function AddressActions({
     });
     const j = await res.json();
     setBusy(false);
-    setMsg(res.ok ? "Label gespeichert." : j.error || "Fehler");
+    setMsg(res.ok ? t.saved : j.error || c.error);
     if (res.ok && j.annotation) setExisting(j.annotation);
   }
 
@@ -106,57 +121,57 @@ export default function AddressActions({
     });
     const j = await res.json();
     setBusy(false);
-    setMsg(res.ok ? "Zur Watchlist hinzugefügt." : j.error || "Fehler");
+    setMsg(res.ok ? t.watchAdded : j.error || c.error);
   }
 
   return (
     <form onSubmit={saveLabel} className="card space-y-2 text-sm">
-      <h2 className="font-semibold">{existing ? "Eigenes Label bearbeiten" : "Eigenes Label anlegen"}</h2>
+      <h2 className="font-semibold">{existing ? t.titleEdit : t.titleNew}</h2>
       <div>
-        <label className="label">Bezeichnung</label>
+        <label className="label">{c.label}</label>
         <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} required />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="label">Kategorie</label>
+          <label className="label">{c.category}</label>
           <select className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
-            {CATEGORIES.map(([v, n]) => (
+            {SELECTABLE_CATEGORIES.map((v) => (
               <option key={v} value={v}>
-                {n}
+                {categoryName[v]}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <label className="label">Risiko</label>
+          <label className="label">{c.risk}</label>
           <select className="input" value={risk} onChange={(e) => setRisk(e.target.value)}>
-            <option value="">keins</option>
-            <option value="low">niedrig</option>
-            <option value="medium">mittel</option>
-            <option value="high">hoch</option>
+            <option value="">{riskNone}</option>
+            <option value="low">{riskName.low}</option>
+            <option value="medium">{riskName.medium}</option>
+            <option value="high">{riskName.high}</option>
           </select>
         </div>
       </div>
       <div>
-        <label className="label">Notiz</label>
+        <label className="label">{c.note}</label>
         <textarea className="input" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
       <label className="flex items-center gap-2 text-xs">
         <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} />
-        Im Team teilen
+        {c.shareWithTeam}
       </label>
       <div className="flex flex-wrap gap-2">
         <button className="btn" disabled={busy}>
-          Speichern
+          {c.save}
         </button>
         <button className="btn-secondary" type="button" onClick={addWatch} disabled={busy}>
-          Beobachten
+          {t.watch}
         </button>
         <Link className="btn-secondary" href="/watchlist">
-          Watchlist
+          {t.watchlist}
         </Link>
       </div>
-      {msg && <p className="text-xs text-gray-400">{msg}</p>}
+      {msg && <p className="text-xs text-muted">{msg}</p>}
     </form>
   );
 }

@@ -2,8 +2,70 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { formatAmount, formatDate, formatPercent, shortHash } from "@/lib/format";
+import { shortHash } from "@/lib/format";
 import { CHAIN_LIST, chainMeta, type ChainId } from "@/lib/chains";
+import { useFormatters, useLocale, useT } from "@/lib/i18n/provider";
+import { COMMON } from "@/lib/i18n/labels";
+import { translateHint } from "@/lib/i18n/hints";
+
+const TXT = {
+  en: {
+    noteTitle: "Your own note on this transaction",
+    noteLoginBefore: "Log in",
+    noteLoginAfter: "for notes on transactions.",
+    noteSaved: "Note saved.",
+    mixerTitle: "Correlate mixer payouts",
+    mixerLead:
+      "Looks for payouts of a service that match this payment in amount and timing. The result is a list of candidates, not an attribution.",
+    serviceAddress: "Address of the service",
+    amount: (unit: string) => `Amount (${unit})`,
+    windowHours: "Window (h)",
+    tolerance: "Tolerance (%)",
+    searching: "Searching…",
+    findCandidates: "Find candidates",
+    candidateCount: (found: number, examined: number) =>
+      `${found} candidate${found === 1 ? "" : "s"} out of ${examined} outputs checked`,
+    ccTitle: "Check a move to another chain",
+    ccLead:
+      "Converts the amount at the rate of the day and checks whether a matching deposit exists at a candidate address on the destination chain. A complete search across a foreign chain is not possible without an index of your own.",
+    destChain: "Destination chain",
+    candidateAddress: "Candidate address on the destination chain",
+    windowMinutes: "Time window (minutes)",
+    checking: "Checking…",
+    startMatch: "Start the comparison",
+    expected: "Expected:",
+    noMatch: "No matching deposit found.",
+    referenceTime: "Reference time for both tools:",
+  },
+  de: {
+    noteTitle: "Eigene Notiz zur Transaktion",
+    noteLoginBefore: "Einloggen",
+    noteLoginAfter: "für Notizen an Transaktionen.",
+    noteSaved: "Notiz gespeichert.",
+    mixerTitle: "Mixer-Ausgänge korrelieren",
+    mixerLead:
+      "Sucht Auszahlungen eines Dienstes, die betrags- und zeitnah zu dieser Zahlung passen. Ergebnis ist eine Kandidatenliste, keine Zuordnung.",
+    serviceAddress: "Adresse des Dienstes",
+    amount: (unit: string) => `Betrag (${unit})`,
+    windowHours: "Fenster (h)",
+    tolerance: "Toleranz (%)",
+    searching: "Suche…",
+    findCandidates: "Kandidaten suchen",
+    candidateCount: (found: number, examined: number) =>
+      `${found} Kandidat(en) aus ${examined} geprüften Ausgängen`,
+    ccTitle: "Übergang auf andere Chain prüfen",
+    ccLead:
+      "Rechnet den Betrag über den damaligen Kurs um und prüft, ob bei einer Kandidatenadresse auf der Zielkette ein passender Eingang liegt. Eine vollständige Suche über eine fremde Kette ist ohne eigenen Index nicht möglich.",
+    destChain: "Zielkette",
+    candidateAddress: "Kandidatenadresse auf der Zielkette",
+    windowMinutes: "Zeitfenster (Minuten)",
+    checking: "Prüfe…",
+    startMatch: "Abgleich starten",
+    expected: "Erwartet:",
+    noMatch: "Kein passender Eingang gefunden.",
+    referenceTime: "Bezugszeitpunkt für beide Werkzeuge:",
+  },
+};
 
 interface Annotation {
   _id: string;
@@ -63,6 +125,10 @@ export default function TxTools({
   /** Empfänger dieser Transaktion, als Vorauswahl für die Werkzeuge */
   outputs: { address: string; valueSat: number }[];
 }) {
+  const t = useT(TXT);
+  const c = useT(COMMON);
+  const fmt = useFormatters();
+  const locale = useLocale();
   const meta = chainMeta(chain);
   const biggest = [...outputs].sort((a, b) => b.valueSat - a.valueSat)[0];
 
@@ -88,8 +154,8 @@ export default function TxTools({
         /* ignorieren */
       }
     };
-    const t = setTimeout(load, 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
   }, [txid, loggedIn]);
 
   async function saveNote(e: React.FormEvent) {
@@ -101,7 +167,7 @@ export default function TxTools({
       body: JSON.stringify({ chain, kind: "tx", address: txid, label, category: "custom", notes: note, shared }),
     });
     const j = await res.json();
-    setNoteMsg(res.ok ? "Notiz gespeichert." : j.error || "Fehler");
+    setNoteMsg(res.ok ? t.noteSaved : j.error || c.error);
   }
 
   /* ---------------- Mixer-Korrelation ---------------- */
@@ -183,52 +249,51 @@ export default function TxTools({
     <div className="grid gap-4 lg:grid-cols-3">
       {/* Notiz */}
       <form onSubmit={saveNote} className="card space-y-2 text-sm">
-        <h2 className="font-semibold">Eigene Notiz zur Transaktion</h2>
+        <h2 className="font-semibold">{t.noteTitle}</h2>
         {!loggedIn ? (
-          <p className="text-gray-400">
-            <Link href="/login" className="text-accent">
-              Einloggen
+          <p className="text-muted">
+            <Link href="/login" className="text-brand">
+              {t.noteLoginBefore}
             </Link>{" "}
-            für Notizen an Transaktionen.
+            {t.noteLoginAfter}
           </p>
         ) : (
           <>
             <div>
-              <label className="label">Bezeichnung</label>
+              <label className="label">{c.label}</label>
               <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} required />
             </div>
             <div>
-              <label className="label">Notiz</label>
+              <label className="label">{c.note}</label>
               <textarea className="input" rows={4} value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
             <label className="flex items-center gap-2 text-xs">
               <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} />
-              Im Team teilen
+              {c.shareWithTeam}
             </label>
-            <button className="btn">Speichern</button>
-            {noteMsg && <p className="text-xs text-gray-400">{noteMsg}</p>}
+            <button className="btn">{c.save}</button>
+            {noteMsg && <p className="text-xs text-muted">{noteMsg}</p>}
           </>
         )}
       </form>
 
       {/* Mixer */}
       <form onSubmit={runMixer} className="card space-y-2 text-sm">
-        <h2 className="font-semibold">Mixer-Ausgänge korrelieren</h2>
-        <p className="text-xs text-gray-400">
-          Sucht Auszahlungen eines Dienstes, die betrags- und zeitnah zu dieser Zahlung passen. Ergebnis ist eine
-          Kandidatenliste, keine Zuordnung.
+        <h2 className="font-semibold">{t.mixerTitle}</h2>
+        <p className="text-xs text-muted">
+{t.mixerLead}
         </p>
         <div>
-          <label className="label">Adresse des Dienstes</label>
+          <label className="label">{t.serviceAddress}</label>
           <input className="input mono" value={mixerAddress} onChange={(e) => setMixerAddress(e.target.value)} required />
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <label className="label">Betrag ({meta.unit})</label>
+            <label className="label">{t.amount(meta.unit)}</label>
             <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
           <div>
-            <label className="label">Fenster (h)</label>
+            <label className="label">{t.windowHours}</label>
             <input className="input" type="number" min={1} max={720} value={windowHours} onChange={(e) => setWindowHours(Number(e.target.value))} />
           </div>
           <div>
@@ -237,28 +302,28 @@ export default function TxTools({
           </div>
         </div>
         <button className="btn" disabled={mixerBusy || !mixerAddress}>
-          {mixerBusy ? "Suche…" : "Kandidaten suchen"}
+          {mixerBusy ? t.searching : t.findCandidates}
         </button>
         {mixerErr && <p className="text-xs text-red-400">{mixerErr}</p>}
         {mixer && (
           <div className="space-y-1">
-            <p className="text-xs text-gray-400">
-              {mixer.candidates.length} Kandidat(en) aus {mixer.examined} geprüften Ausgängen
+            <p className="text-xs text-muted">
+              {t.candidateCount(mixer.candidates.length, mixer.examined)}
             </p>
             {mixer.warnings.map((w, i) => (
               <p key={i} className="text-xs text-yellow-400">
-                {w}
+                {translateHint(w, locale)}
               </p>
             ))}
             <ul className="max-h-56 space-y-1 overflow-y-auto text-xs">
               {mixer.candidates.map((c, i) => (
                 <li key={`${c.txid}-${i}`} className="flex items-center gap-2 border-t border-border py-1">
-                  <span className="w-9 shrink-0 text-accent">{formatPercent(c.score, 0)}</span>
-                  <Link href={`/address/${c.address}?chain=${chain}`} className="mono hover:text-accent">
+                  <span className="w-9 shrink-0 text-brand">{fmt.percent(c.score, 0)}</span>
+                  <Link href={`/address/${c.address}?chain=${chain}`} className="mono hover:text-brand">
                     {shortHash(c.address, 5)}
                   </Link>
-                  <span className="ml-auto">{formatAmount(c.valueSat, chain, 5)}</span>
-                  <span className="text-gray-500">+{c.deltaHours.toFixed(1)} h</span>
+                  <span className="ml-auto">{fmt.amount(c.valueSat, chain, 5)}</span>
+                  <span className="text-subtle">+{c.deltaHours.toFixed(1)} h</span>
                 </li>
               ))}
             </ul>
@@ -268,15 +333,13 @@ export default function TxTools({
 
       {/* Cross-Chain */}
       <form onSubmit={runCrossChain} className="card space-y-2 text-sm">
-        <h2 className="font-semibold">Übergang auf andere Chain prüfen</h2>
-        <p className="text-xs text-gray-400">
-          Rechnet den Betrag über den damaligen Kurs um und prüft, ob bei einer Kandidatenadresse auf der Zielkette
-          ein passender Eingang liegt. Eine vollständige Suche über eine fremde Kette ist ohne eigenen Index nicht
-          möglich.
+        <h2 className="font-semibold">{t.ccTitle}</h2>
+        <p className="text-xs text-muted">
+{t.ccLead}
         </p>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="label">Zielkette</label>
+            <label className="label">{t.destChain}</label>
             <select className="input" value={toChain} onChange={(e) => setToChain(e.target.value as ChainId)}>
               {CHAIN_LIST.filter((c) => c.id !== chain).map((c) => (
                 <option key={c.id} value={c.id}>
@@ -291,49 +354,49 @@ export default function TxTools({
           </div>
         </div>
         <div>
-          <label className="label">Kandidatenadresse auf der Zielkette</label>
+          <label className="label">{t.candidateAddress}</label>
           <input className="input mono" value={candidate} onChange={(e) => setCandidate(e.target.value)} required />
         </div>
         <div>
-          <label className="label">Zeitfenster (Minuten)</label>
+          <label className="label">{t.windowMinutes}</label>
           <input className="input" type="number" min={1} max={10080} value={windowMinutes} onChange={(e) => setWindowMinutes(Number(e.target.value))} />
         </div>
         <button className="btn" disabled={ccBusy || !candidate}>
-          {ccBusy ? "Prüfe…" : "Abgleich starten"}
+          {ccBusy ? t.checking : t.startMatch}
         </button>
         {ccErr && <p className="text-xs text-red-400">{ccErr}</p>}
         {cc && (
           <div className="space-y-1">
             {cc.expectedSat !== undefined && (
-              <p className="text-xs text-gray-400">
-                Erwartet: {formatAmount(cc.expectedSat, toChain, 6)}
+              <p className="text-xs text-muted">
+                {t.expected} {fmt.amount(cc.expectedSat, toChain, 6)}
                 {cc.valueEur !== undefined &&
-                  ` (${cc.valueEur.toLocaleString("de-DE", { style: "currency", currency: "EUR" })})`}
+                  ` (${cc.valueEur.toLocaleString(fmt.intlLocale, { style: "currency", currency: "EUR" })})`}
               </p>
             )}
             {cc.warnings.map((w, i) => (
               <p key={i} className="text-xs text-yellow-400">
-                {w}
+                {translateHint(w, locale)}
               </p>
             ))}
             <ul className="max-h-56 space-y-1 overflow-y-auto text-xs">
               {cc.matches.map((m) => (
                 <li key={m.txid} className="flex items-center gap-2 border-t border-border py-1">
-                  <span className="w-9 shrink-0 text-accent">{formatPercent(m.score, 0)}</span>
-                  <Link href={`/tx/${m.txid}?chain=${toChain}`} className="mono hover:text-accent">
+                  <span className="w-9 shrink-0 text-brand">{fmt.percent(m.score, 0)}</span>
+                  <Link href={`/tx/${m.txid}?chain=${toChain}`} className="mono hover:text-brand">
                     {shortHash(m.txid, 5)}
                   </Link>
                   <span className="ml-auto">
                     {m.token ? `${m.token} ` : ""}
-                    {formatAmount(m.receivedSat, toChain, 6)}
+                    {fmt.amount(m.receivedSat, toChain, 6)}
                   </span>
-                  <span className="text-gray-500">
-                    {formatPercent(m.deltaPercent, 1)} · +{m.deltaMinutes.toFixed(0)} min
+                  <span className="text-subtle">
+                    {fmt.percent(m.deltaPercent, 1)} · +{m.deltaMinutes.toFixed(0)} min
                   </span>
                 </li>
               ))}
             </ul>
-            {!cc.matches.length && <p className="text-xs text-gray-500">Kein passender Eingang gefunden.</p>}
+            {!cc.matches.length && <p className="text-xs text-subtle">{t.noMatch}</p>}
           </div>
         )}
       </form>
@@ -342,9 +405,11 @@ export default function TxTools({
 }
 
 export function TxToolsHint({ blockTime }: { blockTime?: number }) {
+  const t = useT(TXT);
+  const fmt = useFormatters();
   return (
-    <p className="text-xs text-gray-500">
-      Bezugszeitpunkt für beide Werkzeuge: {formatDate(blockTime)}
+    <p className="text-xs text-subtle">
+      {t.referenceTime} {fmt.date(blockTime)}
     </p>
   );
 }

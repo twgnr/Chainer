@@ -10,10 +10,69 @@ import { getBtcPrice, getPriceSeries, priceAt } from "@/lib/providers/price";
 import { activityPattern } from "@/lib/trace/heuristics";
 import { analyseInflowRisk } from "@/lib/trace/inflow";
 import { classifyHarmful } from "@/lib/trace/risk";
-import { formatAmount, formatDate, formatFiat, shortHash } from "@/lib/format";
+import { shortHash } from "@/lib/format";
 import { chainMeta, isChainAddress, isChainId, DEFAULT_CHAIN, type ChainId } from "@/lib/chains";
+import { getFormatters, getLocale, getT } from "@/lib/i18n/server";
+import { translateHint } from "@/lib/i18n/hints";
 
 export const dynamic = "force-dynamic";
+
+const TXT = {
+  en: {
+    heading: "Address",
+    traceForward: "Trace forward",
+    traceOrigin: "Trace the origin",
+    reported: (label: string) => `This address is reported as harmful: ${label}`,
+    source: "Source:",
+    balance: "Balance",
+    received: "Received",
+    sent: "Sent",
+    transactions: "Transactions",
+    sourceOf: (provider: string) => `Source: ${provider}`,
+    labelsTitle: "Labels & risk",
+    unreachable: (providers: string) => `Not reachable: ${providers}`,
+    furtherResearch: "Further research",
+    explorer: (chain: string) => `${chain} explorer`,
+    activityTitle: "Activity pattern",
+    txHeading: (count: number, provider: string) => `(${count} most recent, source: ${provider})`,
+    colTx: "Transaction",
+    colTime: "Time",
+    colDirection: "Direction",
+    colAmount: "Amount",
+    colValueThen: "Value then",
+    colCounterparty: "Counterparty",
+    incoming: "In",
+    outgoing: "Out",
+    more: (n: number) => `+${n} more`,
+  },
+  de: {
+    heading: "Adresse",
+    traceForward: "Vorwärts verfolgen",
+    traceOrigin: "Herkunft verfolgen",
+    reported: (label: string) => `Diese Adresse ist als schädlich gemeldet: ${label}`,
+    source: "Quelle:",
+    balance: "Saldo",
+    received: "Empfangen",
+    sent: "Gesendet",
+    transactions: "Transaktionen",
+    sourceOf: (provider: string) => `Quelle: ${provider}`,
+    labelsTitle: "Labels & Risiko",
+    unreachable: (providers: string) => `Nicht erreichbar: ${providers}`,
+    furtherResearch: "Weitere Recherche",
+    explorer: (chain: string) => `${chain}-Explorer`,
+    activityTitle: "Aktivitätsmuster",
+    txHeading: (count: number, provider: string) => `(${count} neueste, Quelle: ${provider})`,
+    colTx: "Transaktion",
+    colTime: "Zeit",
+    colDirection: "Richtung",
+    colAmount: "Betrag",
+    colValueThen: "Wert damals",
+    colCounterparty: "Gegenseite",
+    incoming: "Eingang",
+    outgoing: "Ausgang",
+    more: (n: number) => `+${n} weitere`,
+  },
+};
 
 export default async function AddressPage({
   params,
@@ -28,6 +87,9 @@ export default async function AddressPage({
   if (!isChainAddress(addr, chain)) notFound();
   const { ctx, session } = await getRequestContext({ chain });
   const meta = chainMeta(chain);
+  const t = await getT(TXT);
+  const fmt = await getFormatters();
+  const locale = await getLocale();
 
   const [info, txs, labels, price] = await Promise.all([
     getAddress(ctx, addr).catch((e: Error) => e),
@@ -53,15 +115,15 @@ export default async function AddressPage({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-semibold">Adresse</h1>
-        <span className="rounded bg-panel px-2 py-0.5 text-xs text-accent">{meta.name}</span>
+        <h1 className="text-lg font-semibold">{t.heading}</h1>
+        <span className="rounded bg-panel px-2 py-0.5 text-xs text-brand">{meta.name}</span>
         <span className="mono break-all text-sm">{addr}</span>
         <div className="ml-auto flex flex-wrap gap-2">
           <Link href={`/trace?start=${addr}&chain=${chain}&direction=forward`} className="btn">
-            Vorwärts verfolgen
+            {t.traceForward}
           </Link>
           <Link href={`/trace?start=${addr}&chain=${chain}&direction=backward`} className="btn-secondary">
-            Herkunft verfolgen
+            {t.traceOrigin}
           </Link>
         </div>
       </div>
@@ -69,10 +131,10 @@ export default async function AddressPage({
       {ownVerdict && (
         <div className="rounded-lg border border-red-600 bg-red-950/60 p-3">
           <h2 className="font-semibold text-red-300">
-            &#9888; Diese Adresse ist als schädlich gemeldet: {ownVerdict.label}
+            &#9888; {t.reported(ownVerdict.label)}
           </h2>
-          <p className="text-sm text-gray-300">
-            Quelle: {ownVerdict.source}
+          <p className="text-sm text-fg-2">
+            {t.source} {ownVerdict.source}
             {ownVerdict.details ? ` · ${ownVerdict.details}` : ""}
           </p>
         </div>
@@ -80,47 +142,47 @@ export default async function AddressPage({
 
       <div className="grid gap-4 md:grid-cols-4">
         {info instanceof Error ? (
-          <div className="card col-span-4 text-red-300">{info.message}</div>
+          <div className="card col-span-4 text-red-300">{translateHint(info.message, locale)}</div>
         ) : (
           <>
             <Stat
-              label="Saldo"
-              value={formatAmount(info.data.balanceSat, chain)}
-              sub={formatFiat(info.data.balanceSat, price?.eur, chain)}
+              label={t.balance}
+              value={fmt.amount(info.data.balanceSat, chain)}
+              sub={fmt.fiat(info.data.balanceSat, price?.eur, chain)}
             />
             <Stat
-              label="Empfangen"
-              value={formatAmount(info.data.receivedSat, chain)}
-              sub={formatFiat(info.data.receivedSat, price?.eur, chain)}
+              label={t.received}
+              value={fmt.amount(info.data.receivedSat, chain)}
+              sub={fmt.fiat(info.data.receivedSat, price?.eur, chain)}
             />
             <Stat
-              label="Gesendet"
-              value={formatAmount(info.data.sentSat, chain)}
-              sub={formatFiat(info.data.sentSat, price?.eur, chain)}
+              label={t.sent}
+              value={fmt.amount(info.data.sentSat, chain)}
+              sub={fmt.fiat(info.data.sentSat, price?.eur, chain)}
             />
-            <Stat label="Transaktionen" value={String(info.data.txCount)} sub={`Quelle: ${info.data.provider}`} />
+            <Stat label={t.transactions} value={String(info.data.txCount)} sub={t.sourceOf(info.data.provider)} />
           </>
         )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <div className="card">
-          <h2 className="mb-2 font-semibold">Labels & Risiko</h2>
+          <h2 className="mb-2 font-semibold">{t.labelsTitle}</h2>
           <LabelBadges labels={labels.labels} />
           {labels.errors.length > 0 && (
-            <p className="mt-2 text-xs text-gray-500">
-              Nicht erreichbar: {labels.errors.map((e) => e.provider).join(", ")}
+            <p className="mt-2 text-xs text-subtle">
+              {t.unreachable(labels.errors.map((e) => e.provider).join(", "))}
             </p>
           )}
           <div className="mt-4">
-            <h3 className="mb-1 text-sm font-semibold">Weitere Recherche</h3>
+            <h3 className="mb-1 text-sm font-semibold">{t.furtherResearch}</h3>
             <div className="flex flex-wrap gap-2 text-xs">
               <ExternalLink href={`https://bitcointalk.org/index.php?action=search2&search=${addr}`} label="Bitcointalk" />
               <ExternalLink href={`https://www.google.com/search?q=%22${addr}%22`} label="Google" />
               <ExternalLink href={`https://duckduckgo.com/?q=%22${addr}%22`} label="DuckDuckGo" />
               <ExternalLink href={`https://www.reddit.com/search/?q=%22${addr}%22`} label="Reddit" />
               <ExternalLink href={`https://www.bitcoinabuse.com/reports/${addr}`} label="BitcoinAbuse" />
-              <ExternalLink href={explorerUrl(chain, addr)} label={`${meta.name}-Explorer`} />
+              <ExternalLink href={explorerUrl(chain, addr)} label={t.explorer(meta.name)} />
             </div>
           </div>
         </div>
@@ -133,27 +195,27 @@ export default async function AddressPage({
 
       {activity.total > 3 && (
         <div className="card">
-          <h2 className="mb-2 font-semibold">Aktivitätsmuster</h2>
+          <h2 className="mb-2 font-semibold">{t.activityTitle}</h2>
           <ActivityHeatmap activity={activity} compact />
         </div>
       )}
 
       <div className="card overflow-x-auto">
         <h2 className="mb-2 font-semibold">
-          Transaktionen {!(txs instanceof Error) && `(${txList.length} neueste, Quelle: ${txs.provider})`}
+          {t.transactions} {!(txs instanceof Error) && t.txHeading(txList.length, txs.provider)}
         </h2>
         {txs instanceof Error ? (
-          <p className="text-red-300">{txs.message}</p>
+          <p className="text-red-300">{translateHint(txs.message, locale)}</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-gray-500">
+            <thead className="text-left text-xs uppercase text-subtle">
               <tr>
-                <th className="py-1">Transaktion</th>
-                <th>Zeit</th>
-                <th>Richtung</th>
-                <th className="text-right">Betrag</th>
-                <th className="text-right">Wert damals</th>
-                <th className="text-right">Gegenseite</th>
+                <th className="py-1">{t.colTx}</th>
+                <th>{t.colTime}</th>
+                <th>{t.colDirection}</th>
+                <th className="text-right">{t.colAmount}</th>
+                <th className="text-right">{t.colValueThen}</th>
+                <th className="text-right">{t.colCounterparty}</th>
               </tr>
             </thead>
             <tbody>
@@ -170,27 +232,31 @@ export default async function AddressPage({
                 return (
                   <tr key={tx.txid} className="border-t border-border">
                     <td className="mono py-1.5">
-                      <Link href={`/tx/${tx.txid}?chain=${chain}`} className="hover:text-accent">
+                      <Link href={`/tx/${tx.txid}?chain=${chain}`} className="hover:text-brand">
                         {shortHash(tx.txid, 10)}
                       </Link>
                     </td>
-                    <td className="text-gray-400">{formatDate(tx.blockTime)}</td>
+                    <td className="text-muted">{fmt.date(tx.blockTime)}</td>
                     <td>
-                      {net >= 0 ? <span className="text-green-400">Eingang</span> : <span className="text-red-400">Ausgang</span>}
+                      {net >= 0 ? (
+                        <span className="text-green-400">{t.incoming}</span>
+                      ) : (
+                        <span className="text-red-400">{t.outgoing}</span>
+                      )}
                     </td>
                     <td className={`text-right ${net >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {formatAmount(Math.abs(net), chain)}
+                      {fmt.amount(Math.abs(net), chain)}
                     </td>
-                    <td className="text-right text-xs text-gray-400">
-                      {then ? formatFiat(Math.abs(net), then, chain) : "–"}
+                    <td className="text-right text-xs text-muted">
+                      {then ? fmt.fiat(Math.abs(net), then, chain) : "–"}
                     </td>
                     <td className="mono text-right text-xs">
                       {uniq.slice(0, 2).map((a) => (
-                        <Link key={a} href={`/address/${a}?chain=${chain}`} className="block hover:text-accent">
+                        <Link key={a} href={`/address/${a}?chain=${chain}`} className="block hover:text-brand">
                           {shortHash(a, 8)}
                         </Link>
                       ))}
-                      {uniq.length > 2 && <span className="text-gray-500">+{uniq.length - 2} weitere</span>}
+                      {uniq.length > 2 && <span className="text-subtle">{t.more(uniq.length - 2)}</span>}
                     </td>
                   </tr>
                 );
@@ -210,7 +276,7 @@ function explorerUrl(chain: ChainId, addr: string) {
 
 function ExternalLink({ href, label }: { href: string; label: string }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="rounded border border-border px-2 py-1 hover:text-accent">
+    <a href={href} target="_blank" rel="noreferrer" className="rounded border border-border px-2 py-1 hover:text-brand">
       {label} ↗
     </a>
   );
@@ -221,7 +287,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
     <div className="card">
       <div className="label">{label}</div>
       <div className="text-lg font-semibold">{value}</div>
-      {sub && <div className="text-xs text-gray-500">{sub}</div>}
+      {sub && <div className="text-xs text-subtle">{sub}</div>}
     </div>
   );
 }

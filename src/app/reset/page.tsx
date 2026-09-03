@@ -1,6 +1,14 @@
 import ResetForm from "@/components/ResetForm";
+import { getT } from "@/lib/i18n/server";
 
-export const metadata = { title: "Passwort vergessen" };
+const TXT = {
+  en: { title: "Forgotten password" },
+  de: { title: "Passwort vergessen" },
+};
+
+export async function generateMetadata() {
+  return { title: (await getT(TXT)).title };
+}
 
 export default function ResetPage() {
   return <ResetForm mode="request" />;

@@ -78,15 +78,18 @@ describe("allHarmful", () => {
 
 describe("categoryText", () => {
   it("übersetzt bekannte Kategorien ins Deutsche", () => {
-    expect(categoryText("sanctioned")).toBe("sanktioniert");
-    expect(categoryText("ransomware")).toBe("Ransomware");
-    expect(categoryText("scam")).toBe("Betrug");
-    expect(categoryText("darknet")).toBe("Darknet-Markt");
-    expect(categoryText("mixer")).toBe("Mixer");
+    expect(categoryText("sanctioned")).toBe("sanctioned");
+    expect(categoryText("darknet")).toBe("darknet market");
+    expect(categoryText("sanctioned", "de")).toBe("sanktioniert");
+    expect(categoryText("ransomware", "de")).toBe("Ransomware");
+    expect(categoryText("scam", "de")).toBe("Betrug");
+    expect(categoryText("darknet", "de")).toBe("Darknet-Markt");
+    expect(categoryText("mixer", "de")).toBe("Mixer");
   });
 
   it("gibt unbekannte Kategorien unverändert zurück und nutzt sonst einen Ersatztext", () => {
     expect(categoryText("gambling")).toBe("gambling");
-    expect(categoryText(undefined)).toBe("auffällig");
+    expect(categoryText(undefined)).toBe("suspicious");
+    expect(categoryText(undefined, "de")).toBe("auffällig");
   });
 });

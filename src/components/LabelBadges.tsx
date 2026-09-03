@@ -1,4 +1,7 @@
+"use client";
+
 import type { AddressLabel } from "@/lib/providers/types";
+import { useT } from "@/lib/i18n/provider";
 
 const colors: Record<string, string> = {
   sanctioned: "bg-red-600 text-white",
@@ -14,11 +17,17 @@ const colors: Record<string, string> = {
   bridge: "bg-cyan-700/80 text-white",
   wallet: "bg-gray-600 text-white",
   custom: "bg-emerald-600 text-white",
-  other: "bg-gray-700 text-gray-200",
+  other: "bg-gray-700 text-fg-2",
+};
+
+const TXT = {
+  en: { noLabels: "no labels known" },
+  de: { noLabels: "keine Labels bekannt" },
 };
 
 export default function LabelBadges({ labels, compact = false }: { labels: AddressLabel[]; compact?: boolean }) {
-  if (!labels.length) return compact ? null : <span className="text-xs text-gray-500">keine Labels bekannt</span>;
+  const t = useT(TXT);
+  if (!labels.length) return compact ? null : <span className="text-xs text-subtle">{t.noLabels}</span>;
   // Eigene Labels zuerst, danach die riskantesten
   const order = { high: 0, medium: 1, low: 2, undefined: 3 } as Record<string, number>;
   const sorted = [...labels].sort(

@@ -47,6 +47,19 @@ describe("isChainAddress", () => {
     expect(isChainAddress(BTC_BECH32, "litecoin")).toBe(false);
   });
 
+  it("weist Bech32-Adressen mit Zeichen außerhalb des Zeichenvorrats ab", () => {
+    // „1“, „b“, „i“ und „o“ gehören nicht zum Datenteil einer Bech32-Adresse.
+    expect(isChainAddress("bc1q9x7v3p3k5q6a8z2m4x9p0w7e8r5t6y7u8i9o0p", "bitcoin")).toBe(false);
+    expect(isChainAddress("bc1qbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bitcoin")).toBe(false);
+    expect(isChainAddress("ltc1qiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii", "litecoin")).toBe(false);
+  });
+
+  it("erkennt Bech32-Adressen auch in Großschreibung", () => {
+    expect(isChainAddress(BTC_BECH32.toUpperCase(), "bitcoin")).toBe(true);
+    // Gemischte Schreibweise ist bei Bech32 nicht zulässig
+    expect(isChainAddress("Bc1Qw508D6Qejxtdg4Y5R3Zarvary0C5Xw7Kv8F3T4", "bitcoin")).toBe(false);
+  });
+
   it("ignoriert umschließende Leerzeichen", () => {
     expect(isChainAddress(`  ${BTC_LEGACY}  `, "bitcoin")).toBe(true);
   });

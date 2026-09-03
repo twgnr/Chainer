@@ -3,8 +3,27 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CHAIN_LIST, classifyChainInput, guessChain, type ChainId } from "@/lib/chains";
+import { useT } from "@/lib/i18n/provider";
+
+const TXT = {
+  en: {
+    auto: "auto-detect",
+    placeholder: "Address or transaction ID",
+    submit: "Search",
+    unknownFormat: "Format not recognised. Please pick the chain manually.",
+    mismatch: (v: string, chain: string) => `“${v}” does not match the format of a ${chain} address or transaction.`,
+  },
+  de: {
+    auto: "automatisch",
+    placeholder: "Adresse oder Transaktions-ID",
+    submit: "Suchen",
+    unknownFormat: "Format nicht erkannt. Bitte die Chain manuell wählen.",
+    mismatch: (v: string, chain: string) => `„${v}“ passt nicht zum Format einer ${chain}-Adresse oder -Transaktion.`,
+  },
+};
 
 export default function SearchBox({ large = false }: { large?: boolean }) {
+  const t = useT(TXT);
   const router = useRouter();
   const [q, setQ] = useState("");
   const [chain, setChain] = useState<ChainId | "auto">("auto");
@@ -15,13 +34,13 @@ export default function SearchBox({ large = false }: { large?: boolean }) {
     const v = q.trim();
     const target: ChainId | null = chain === "auto" ? guessChain(v) : chain;
     if (!target) {
-      setErr("Format nicht erkannt. Bitte die Chain manuell wählen.");
+      setErr(t.unknownFormat);
       return;
     }
     const kind = classifyChainInput(v, target);
     if (kind === "address") router.push(`/address/${v}?chain=${target}`);
     else if (kind === "txid") router.push(`/tx/${v}?chain=${target}`);
-    else setErr(`„${v}“ passt nicht zum Format einer ${target}-Adresse oder -Transaktion.`);
+    else setErr(t.mismatch(v, target));
   }
 
   return (
@@ -32,7 +51,7 @@ export default function SearchBox({ large = false }: { large?: boolean }) {
           value={chain}
           onChange={(e) => setChain(e.target.value as ChainId | "auto")}
         >
-          <option value="auto">automatisch</option>
+          <option value="auto">{t.auto}</option>
           {CHAIN_LIST.map((c) => (
             <option key={c.id} value={c.id}>
               {c.symbol}
@@ -41,16 +60,20 @@ export default function SearchBox({ large = false }: { large?: boolean }) {
         </select>
         <input
           className={`input mono ${large ? "py-3 text-base" : ""}`}
-          placeholder="Adresse oder Transaktions-ID"
+          placeholder={t.placeholder}
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
             setErr(null);
           }}
           spellCheck={false}
+          /* Passwortmanager-Erweiterungen hängen an Eingabefeldern eigene
+             Attribute ein, bevor React hydriert; das darf keinen
+             Hydrations-Fehler auslösen. */
+          suppressHydrationWarning
         />
         <button className="btn" type="submit">
-          Suchen
+          {t.submit}
         </button>
       </div>
       {err && <p className="mt-2 text-sm text-red-400">{err}</p>}

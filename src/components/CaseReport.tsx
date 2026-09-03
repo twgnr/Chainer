@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { CHAIN_LIST, chainMeta, type ChainId } from "@/lib/chains";
-import { formatAmount, formatDate, formatFiat, formatPercent, shortHash } from "@/lib/format";
+import { shortHash, type Formatters } from "@/lib/format";
+import { useFormatters, useLocale, useT } from "@/lib/i18n/provider";
+import type { Locale } from "@/lib/i18n/locale";
+import { translateHint, translateHints } from "@/lib/i18n/hints";
+import { categoryText } from "@/lib/trace/risk";
 import type { AddressNodeData, TraceNode, TraceResult, TxNodeData } from "@/lib/trace/types";
 
 /* ------------------------------------------------------------------ Typen */
@@ -55,42 +59,247 @@ function isAddressNode(n: TraceNode): n is TraceNode & { data: AddressNodeData }
   return n.data.type === "address";
 }
 
-/** ISO-Datum eines Mongoose-Feldes im deutschen Format */
-function isoDate(v: string | undefined): string {
-  if (!v) return "–";
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? "–" : d.toLocaleString("de-DE");
-}
+
 
 function str(v: unknown, fallback = "–"): string {
   if (v === undefined || v === null || v === "") return fallback;
   return String(v);
 }
 
-const DIRECTION_LABEL: Record<string, string> = {
-  forward: "vorwärts (Mittelabfluss)",
-  backward: "rückwärts (Mittelherkunft)",
-  both: "beide Richtungen",
+const TXT = {
+  en: {
+    direction: {
+      forward: "forward (outflow of funds)",
+      backward: "backward (origin of funds)",
+      both: "both directions",
+    },
+    mode: { address: "Address-based", utxo: "UTXO-exact" },
+    taint: {
+      none: "none",
+      haircut: "haircut (proportional)",
+      poison: "poison (in full)",
+      fifo: "FIFO (order)",
+    },
+    risk: { none: "none", low: "low", medium: "medium", high: "high" },
+    csvHead: ["Trace", "Chain", "Time", "TXID", "Inputs", "Outputs", "Volume", "Value EUR", "Fee", "Notes"],
+    back: "← Back to the case",
+    print: "Print as PDF",
+    exportCsv: "Export CSV",
+    reportTitle: (name: string) => `Investigation report: ${name}`,
+    caseRef: "Case reference:",
+    chain: "Chain:",
+    created: "Created:",
+    lastChanged: "Last changed:",
+    author: "Author:",
+    reportGenerated: "Report generated:",
+    unknownAuthor: "unknown",
+    summary: "Summary",
+    startPoint: "Starting point:",
+    traces: "Traces:",
+    addressesTotal: "Addresses in total:",
+    txsTotal: "Transactions in total:",
+    period: "Period:",
+    periodRange: (from: string, to: string) => `${from} to ${to}`,
+    notDeterminable: "cannot be determined",
+    highRiskAddresses: "Addresses with a high risk:",
+    clusters: "Clusters:",
+    notes: "Notes",
+    noNotes: "No notes stored.",
+    logTitle: "Investigation log",
+    colTime: "Time",
+    colAuthor: "Author",
+    colEntry: "Entry",
+    noLog: "No log entries.",
+    mergesTitle: "Manually merged addresses",
+    mergesLead: "These assignments were made by the investigator and do not come from a heuristic.",
+    mergeCount: (n: number) => `${n} addresses: `,
+    hintsTitle: "Notes",
+    disclaimer:
+      "All heuristics (clustering, change detection, taint analysis) yield statements of probability, not proof. No warranty is given.",
+    sourcesUsed: "Data sources used:",
+    noneRecorded: "none recorded",
+    traceTitle: (index: number, name: string) => `Trace ${index}: ${name}`,
+    parameters: "Parameters",
+    directionLabel: "Direction:",
+    modeLabel: "Mode:",
+    taintLabel: "Taint model:",
+    maxDepth: "Maximum depth:",
+    performed: "Performed:",
+    statistics: "Statistics",
+    addresses: "Addresses:",
+    transactions: "Transactions:",
+    apiCalls: "API calls:",
+    duration: "Duration:",
+    truncated: "Truncated:",
+    truncatedYes: "yes (limit reached)",
+    truncatedNo: "no",
+    taintedOutflow: "Tainted outflow:",
+    providersTitle: "Data sources used",
+    providerQueries: (name: string, count: number) => `${name} (${count} queries)`,
+    warningsTitle: "Warnings",
+    txTitle: (n: number) => `Transactions (${n})`,
+    colTxid: "TXID",
+    colInOut: "In/out",
+    colVolume: "Volume",
+    colValueEur: "Value (EUR)",
+    colNotes: "Notes",
+    noTxs: "No transactions recorded.",
+    riskTitle: (n: number) => `Harmful addresses and tainted flows (${n})`,
+    riskLead: (amount: string, affected: number) =>
+      `In the graph, ${amount} at ${affected} address${affected === 1 ? "" : "es"} comes from reported sources.`,
+    colReportedAddress: "Reported address",
+    colVerdict: "Classification",
+    colSource: "Source",
+    colPassedOn: "passed on",
+    colAffected: "affected addresses",
+    affectedTitle: (n: number) => `Addresses with a tainted inflow (${n})`,
+    colAddress: "Address",
+    colTaintedInflow: "tainted inflow",
+    colShare: "share",
+    colOrigin: "Origin",
+    notableTitle: (n: number) => `Notable addresses (${n})`,
+    colLabels: "Labels",
+    colRisk: "Risk",
+    colReceived: "Received",
+    colTaintShare: "Taint share",
+    colCluster: "Cluster",
+    startMark: "(start)",
+    noNotable: "No notable addresses.",
+    clusterTitle: (n: number) => `Clusters (${n})`,
+    colNo: "No.",
+    colName: "Name",
+    colBehaviour: "Behaviour",
+    manualMerge: "merged manually",
+    heuristic: "heuristic",
+    noClusters: "No clusters formed.",
+    peelingTitle: (n: number) => `Peeling chains (${n})`,
+    colSteps: "Steps",
+    colPeeled: "Peeled off",
+    colRemaining: "Remaining",
+    colFirstTxid: "First TXID",
+    activityTitle: "Activity pattern",
+    activityLead: (total: number, zone: string, first: string, last: string) =>
+      `${total} transaction times were evaluated. Estimated time zone: ${zone}. First activity: ${first}, last activity: ${last}.`,
+    suspicious: "suspicious",
+  },
+  de: {
+    direction: {
+      forward: "vorwärts (Mittelabfluss)",
+      backward: "rückwärts (Mittelherkunft)",
+      both: "beide Richtungen",
+    },
+    mode: { address: "Adressbasiert", utxo: "UTXO-genau" },
+    taint: {
+      none: "keins",
+      haircut: "Haircut (anteilig)",
+      poison: "Poison (vollständig)",
+      fifo: "FIFO (Reihenfolge)",
+    },
+    risk: { none: "keins", low: "niedrig", medium: "mittel", high: "hoch" },
+    csvHead: ["Trace", "Chain", "Zeit", "TXID", "Eingänge", "Ausgänge", "Volumen", "Wert EUR", "Gebühr", "Hinweise"],
+    back: "← Zurück zum Fall",
+    print: "Als PDF drucken",
+    exportCsv: "CSV exportieren",
+    reportTitle: (name: string) => `Ermittlungsbericht: ${name}`,
+    caseRef: "Aktenzeichen:",
+    chain: "Chain:",
+    created: "Angelegt:",
+    lastChanged: "Zuletzt geändert:",
+    author: "Verfasser:",
+    reportGenerated: "Bericht erstellt:",
+    unknownAuthor: "unbekannt",
+    summary: "Zusammenfassung",
+    startPoint: "Startpunkt:",
+    traces: "Traces:",
+    addressesTotal: "Adressen gesamt:",
+    txsTotal: "Transaktionen gesamt:",
+    period: "Zeitraum:",
+    periodRange: (from: string, to: string) => `${from} bis ${to}`,
+    notDeterminable: "nicht bestimmbar",
+    highRiskAddresses: "Adressen mit hohem Risiko:",
+    clusters: "Cluster:",
+    notes: "Notizen",
+    noNotes: "Keine Notizen hinterlegt.",
+    logTitle: "Ermittlungsprotokoll",
+    colTime: "Zeit",
+    colAuthor: "Verfasser",
+    colEntry: "Eintrag",
+    noLog: "Keine Protokolleinträge.",
+    mergesTitle: "Manuell zusammengeführte Adressen",
+    mergesLead: "Diese Zuordnungen wurden durch den Ermittler gesetzt und stammen nicht aus einer Heuristik.",
+    mergeCount: (n: number) => `${n} Adressen: `,
+    hintsTitle: "Hinweise",
+    disclaimer:
+      "Alle Heuristiken (Clustering, Wechselgeld-Erkennung, Taint-Analyse) liefern Wahrscheinlichkeitsaussagen und keine Beweise. Angaben ohne Gewähr.",
+    sourcesUsed: "Genutzte Datenquellen:",
+    noneRecorded: "keine erfasst",
+    traceTitle: (index: number, name: string) => `Trace ${index}: ${name}`,
+    parameters: "Parameter",
+    directionLabel: "Richtung:",
+    modeLabel: "Modus:",
+    taintLabel: "Taint-Modell:",
+    maxDepth: "Maximale Tiefe:",
+    performed: "Durchgeführt:",
+    statistics: "Statistik",
+    addresses: "Adressen:",
+    transactions: "Transaktionen:",
+    apiCalls: "API-Aufrufe:",
+    duration: "Dauer:",
+    truncated: "Abgeschnitten:",
+    truncatedYes: "ja (Limit erreicht)",
+    truncatedNo: "nein",
+    taintedOutflow: "Verunreinigter Abfluss:",
+    providersTitle: "Verwendete Datenquellen",
+    providerQueries: (name: string, count: number) => `${name} (${count} Abfragen)`,
+    warningsTitle: "Warnungen",
+    txTitle: (n: number) => `Transaktionen (${n})`,
+    colTxid: "TXID",
+    colInOut: "Ein/Aus",
+    colVolume: "Volumen",
+    colValueEur: "Wert (EUR)",
+    colNotes: "Hinweise",
+    noTxs: "Keine Transaktionen erfasst.",
+    riskTitle: (n: number) => `Schädliche Adressen und belastete Flüsse (${n})`,
+    riskLead: (amount: string, affected: number) =>
+      `Im Graph stammen ${amount} bei ${affected} Adresse(n) aus gemeldeten Quellen.`,
+    colReportedAddress: "Gemeldete Adresse",
+    colVerdict: "Einstufung",
+    colSource: "Quelle",
+    colPassedOn: "weitergegeben",
+    colAffected: "betroffene Adressen",
+    affectedTitle: (n: number) => `Adressen mit belastetem Zufluss (${n})`,
+    colAddress: "Adresse",
+    colTaintedInflow: "belasteter Zufluss",
+    colShare: "Anteil",
+    colOrigin: "Herkunft",
+    notableTitle: (n: number) => `Auffällige Adressen (${n})`,
+    colLabels: "Labels",
+    colRisk: "Risiko",
+    colReceived: "Empfangen",
+    colTaintShare: "Taint-Anteil",
+    colCluster: "Cluster",
+    startMark: "(Start)",
+    noNotable: "Keine auffälligen Adressen.",
+    clusterTitle: (n: number) => `Cluster (${n})`,
+    colNo: "Nr.",
+    colName: "Bezeichnung",
+    colBehaviour: "Verhalten",
+    manualMerge: "manuell zusammengeführt",
+    heuristic: "Heuristik",
+    noClusters: "Keine Cluster gebildet.",
+    peelingTitle: (n: number) => `Peeling-Ketten (${n})`,
+    colSteps: "Schritte",
+    colPeeled: "Abgezweigt",
+    colRemaining: "Rest",
+    colFirstTxid: "Erste TXID",
+    activityTitle: "Aktivitätsmuster",
+    activityLead: (total: number, zone: string, first: string, last: string) =>
+      `Ausgewertet wurden ${total} Transaktionszeitpunkte. Geschätzte Zeitzone: ${zone}. Erste Aktivität: ${first}, letzte Aktivität: ${last}.`,
+    suspicious: "auffällig",
+  },
 };
 
-const MODE_LABEL: Record<string, string> = {
-  address: "Adressbasiert",
-  utxo: "UTXO-genau",
-};
-
-const TAINT_LABEL: Record<string, string> = {
-  none: "keins",
-  haircut: "Haircut (anteilig)",
-  poison: "Poison (vollständig)",
-  fifo: "FIFO (Reihenfolge)",
-};
-
-const RISK_LABEL: Record<string, string> = {
-  none: "keins",
-  low: "niedrig",
-  medium: "mittel",
-  high: "hoch",
-};
+type Texts = (typeof TXT)[Locale];
 
 /** CSV-Feld für deutsche Excel-Versionen absichern */
 function csvCell(v: string | number | undefined): string {
@@ -101,6 +310,9 @@ function csvCell(v: string | number | undefined): string {
 /* --------------------------------------------------------- Komponente */
 
 export default function CaseReport({ data, author }: { data: CaseData; author: string }) {
+  const t = useT(TXT);
+  const fmt = useFormatters();
+  const locale = useLocale();
   const [generatedAt] = useState(() => new Date());
 
   /** Traces normalisieren: alte Fälle besitzen nur `result` */
@@ -154,18 +366,7 @@ export default function CaseReport({ data, author }: { data: CaseData; author: s
 
   /** Transaktionstabelle aller Traces als CSV herunterladen */
   function exportCsv() {
-    const head = [
-      "Trace",
-      "Chain",
-      "Zeit",
-      "TXID",
-      "Eingänge",
-      "Ausgänge",
-      "Volumen",
-      "Wert EUR",
-      "Gebühr",
-      "Hinweise",
-    ];
+    const head = t.csvHead;
     const rows: string[] = [head.map(csvCell).join(";")];
     for (const t of traces) {
       const chain = asChain(t.chain || t.result.params?.chain);
@@ -178,14 +379,14 @@ export default function CaseReport({ data, author }: { data: CaseData; author: s
           [
             csvCell(t.name || t.id),
             csvCell(chainMeta(chain).name),
-            csvCell(formatDate(d.blockTime)),
+            csvCell(fmt.date(d.blockTime)),
             csvCell(d.txid),
             csvCell(d.inputCount),
             csvCell(d.outputCount),
-            csvCell(formatAmount(d.totalOutSat, chain)),
-            csvCell(formatFiat(d.totalOutSat, d.priceEur, chain)),
-            csvCell(formatAmount(d.feeSat, chain)),
-            csvCell((d.hints ?? []).join(", ")),
+            csvCell(fmt.amount(d.totalOutSat, chain)),
+            csvCell(fmt.fiat(d.totalOutSat, d.priceEur, chain)),
+            csvCell(fmt.amount(d.feeSat, chain)),
+            csvCell(translateHints(d.hints, locale).join(", ")),
           ].join(";"),
         );
       }
@@ -219,79 +420,79 @@ export default function CaseReport({ data, author }: { data: CaseData; author: s
       {/* Bedienleiste – erscheint nicht im Druck */}
       <div className="no-print flex flex-wrap items-center gap-2 print:hidden">
         <Link href={`/cases/${data._id}`} className="btn-secondary">
-          ← Zurück zum Fall
+          {t.back}
         </Link>
         <button className="btn" onClick={() => window.print()}>
-          Als PDF drucken
+          {t.print}
         </button>
         <button className="btn-secondary" onClick={exportCsv} disabled={!traces.length}>
-          CSV exportieren
+          {t.exportCsv}
         </button>
       </div>
 
       {/* Kopf */}
       <header className="card print:border-0 print:bg-white print:p-0 print:text-black">
-        <h1 className="text-xl font-semibold">Ermittlungsbericht: {data.name}</h1>
+        <h1 className="text-xl font-semibold">{t.reportTitle(data.name)}</h1>
         <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
           <div>
-            <dt className="inline text-gray-400 print:text-black">Aktenzeichen: </dt>
+            <dt className="inline text-muted print:text-black">{t.caseRef} </dt>
             <dd className="mono inline text-xs">{data._id}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Chain: </dt>
+            <dt className="inline text-muted print:text-black">{t.chain} </dt>
             <dd className="inline">{chainMeta(caseChain).name}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Angelegt: </dt>
-            <dd className="inline">{isoDate(data.createdAt)}</dd>
+            <dt className="inline text-muted print:text-black">{t.created} </dt>
+            <dd className="inline">{fmt.timestamp(data.createdAt)}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Zuletzt geändert: </dt>
-            <dd className="inline">{isoDate(data.updatedAt)}</dd>
+            <dt className="inline text-muted print:text-black">{t.lastChanged} </dt>
+            <dd className="inline">{fmt.timestamp(data.updatedAt)}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Verfasser: </dt>
-            <dd className="inline">{author || "unbekannt"}</dd>
+            <dt className="inline text-muted print:text-black">{t.author} </dt>
+            <dd className="inline">{author || t.unknownAuthor}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Bericht erstellt: </dt>
-            <dd className="inline">{generatedAt.toLocaleString("de-DE")}</dd>
+            <dt className="inline text-muted print:text-black">{t.reportGenerated} </dt>
+            <dd className="inline">{generatedAt.toLocaleString(fmt.intlLocale)}</dd>
           </div>
         </dl>
       </header>
 
       {/* Zusammenfassung */}
       <section className="card print:border-0 print:bg-white print:p-0 print:text-black">
-        <h2 className="mb-2 text-base font-semibold">Zusammenfassung</h2>
+        <h2 className="mb-2 text-base font-semibold">{t.summary}</h2>
         <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
           <div>
-            <dt className="inline text-gray-400 print:text-black">Startpunkt: </dt>
+            <dt className="inline text-muted print:text-black">{t.startPoint} </dt>
             <dd className="mono inline text-xs">{data.start}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Traces: </dt>
+            <dt className="inline text-muted print:text-black">{t.traces} </dt>
             <dd className="inline">{traces.length}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Adressen gesamt: </dt>
+            <dt className="inline text-muted print:text-black">{t.addressesTotal} </dt>
             <dd className="inline">{summary.addresses}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Transaktionen gesamt: </dt>
+            <dt className="inline text-muted print:text-black">{t.txsTotal} </dt>
             <dd className="inline">{summary.txs}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Zeitraum: </dt>
+            <dt className="inline text-muted print:text-black">{t.period} </dt>
             <dd className="inline">
-              {summary.first ? `${formatDate(summary.first)} bis ${formatDate(summary.last)}` : "nicht bestimmbar"}
+              {summary.first ? t.periodRange(fmt.date(summary.first), fmt.date(summary.last)) : t.notDeterminable}
             </dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Adressen mit hohem Risiko: </dt>
+            <dt className="inline text-muted print:text-black">{t.highRiskAddresses} </dt>
             <dd className="inline">{summary.highRisk}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Cluster: </dt>
+            <dt className="inline text-muted print:text-black">{t.clusters} </dt>
             <dd className="inline">{summary.clusters}</dd>
           </div>
         </dl>
@@ -299,30 +500,30 @@ export default function CaseReport({ data, author }: { data: CaseData; author: s
 
       {/* Notizen */}
       <section className="card print:border-0 print:bg-white print:p-0 print:text-black">
-        <h2 className="mb-2 text-base font-semibold">Notizen</h2>
+        <h2 className="mb-2 text-base font-semibold">{t.notes}</h2>
         {data.notes ? (
           <p className="whitespace-pre-wrap text-sm">{data.notes}</p>
         ) : (
-          <p className="text-sm text-gray-500 print:text-black">Keine Notizen hinterlegt.</p>
+          <p className="text-sm text-subtle print:text-black">{t.noNotes}</p>
         )}
       </section>
 
       {/* Ermittlungsprotokoll */}
       <section className="card print:border-0 print:bg-white print:p-0 print:text-black">
-        <h2 className="mb-2 text-base font-semibold">Ermittlungsprotokoll</h2>
+        <h2 className="mb-2 text-base font-semibold">{t.logTitle}</h2>
         {log.length ? (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-gray-500 print:text-black">
+            <thead className="text-left text-xs uppercase text-subtle print:text-black">
               <tr>
-                <th className="py-1">Zeit</th>
-                <th>Verfasser</th>
-                <th>Eintrag</th>
+                <th className="py-1">{t.colTime}</th>
+                <th>{t.colAuthor}</th>
+                <th>{t.colEntry}</th>
               </tr>
             </thead>
             <tbody>
               {log.map((l, i) => (
-                <tr key={i} className="border-t border-border align-top print:border-gray-400">
-                  <td className="py-1 whitespace-nowrap">{isoDate(l.at)}</td>
+                <tr key={i} className="border-t border-border align-top print:border-muted">
+                  <td className="py-1 whitespace-nowrap">{fmt.timestamp(l.at)}</td>
                   <td className="py-1">{l.author || "–"}</td>
                   <td className="py-1 whitespace-pre-wrap">{l.text}</td>
                 </tr>
@@ -330,26 +531,24 @@ export default function CaseReport({ data, author }: { data: CaseData; author: s
             </tbody>
           </table>
         ) : (
-          <p className="text-sm text-gray-500 print:text-black">Keine Protokolleinträge.</p>
+          <p className="text-sm text-subtle print:text-black">{t.noLog}</p>
         )}
       </section>
 
       {/* Traces */}
-      {traces.map((t, ti) => (
-        <TraceSection key={t.id || ti} trace={t} index={ti + 1} />
+      {traces.map((tr, ti) => (
+        <TraceSection key={tr.id || ti} trace={tr} index={ti + 1} t={t} fmt={fmt} locale={locale} />
       ))}
 
       {/* Manuelle Zusammenführungen */}
       {merges.length > 0 && (
         <section className="card print:border-0 print:bg-white print:p-0 print:text-black">
-          <h2 className="mb-2 text-base font-semibold">Manuell zusammengeführte Adressen</h2>
-          <p className="mb-2 text-xs text-gray-500 print:text-black">
-            Diese Zuordnungen wurden durch den Ermittler gesetzt und stammen nicht aus einer Heuristik.
-          </p>
+          <h2 className="mb-2 text-base font-semibold">{t.mergesTitle}</h2>
+          <p className="mb-2 text-xs text-subtle print:text-black">{t.mergesLead}</p>
           <ol className="list-decimal space-y-2 pl-5 text-sm">
             {merges.map((group, i) => (
               <li key={i}>
-                <span className="text-gray-400 print:text-black">{group.length} Adressen: </span>
+                <span className="text-muted print:text-black">{t.mergeCount(group.length)}</span>
                 <span className="mono text-xs">{group.join(", ")}</span>
               </li>
             ))}
@@ -359,14 +558,11 @@ export default function CaseReport({ data, author }: { data: CaseData; author: s
 
       {/* Rechtshinweis */}
       <section className="card print:border-0 print:bg-white print:p-0 print:text-black">
-        <h2 className="mb-2 text-base font-semibold">Hinweise</h2>
-        <p className="text-sm">
-          Alle Heuristiken (Clustering, Wechselgeld-Erkennung, Taint-Analyse) liefern Wahrscheinlichkeitsaussagen und
-          keine Beweise. Angaben ohne Gewähr.
-        </p>
+        <h2 className="mb-2 text-base font-semibold">{t.hintsTitle}</h2>
+        <p className="text-sm">{t.disclaimer}</p>
         <p className="mt-2 text-sm">
-          <span className="text-gray-400 print:text-black">Genutzte Datenquellen: </span>
-          {summary.sources.length ? summary.sources.join(", ") : "keine erfasst"}
+          <span className="text-muted print:text-black">{t.sourcesUsed} </span>
+          {summary.sources.length ? summary.sources.join(", ") : t.noneRecorded}
         </p>
       </section>
     </div>
@@ -375,7 +571,19 @@ export default function CaseReport({ data, author }: { data: CaseData; author: s
 
 /* ------------------------------------------------- Abschnitt je Trace */
 
-function TraceSection({ trace, index }: { trace: CaseTrace; index: number }) {
+function TraceSection({
+  trace,
+  index,
+  t,
+  fmt,
+  locale,
+}: {
+  trace: CaseTrace;
+  index: number;
+  t: Texts;
+  fmt: Formatters;
+  locale: Locale;
+}) {
   const r = trace.result;
   const chain = asChain(trace.chain || r.params?.chain);
   const p = r.params;
@@ -412,72 +620,76 @@ function TraceSection({ trace, index }: { trace: CaseTrace; index: number }) {
   return (
     <section className="card space-y-4 print:border-0 print:bg-white print:p-0 print:text-black">
       <h2 className="text-base font-semibold">
-        Trace {index}: {trace.name || trace.start}
+        {t.traceTitle(index, trace.name || trace.start)}
       </h2>
 
       {/* Parameter */}
       <div>
-        <h3 className="mb-1 text-sm font-semibold">Parameter</h3>
+        <h3 className="mb-1 text-sm font-semibold">{t.parameters}</h3>
         <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
           <div>
-            <dt className="inline text-gray-400 print:text-black">Startpunkt: </dt>
+            <dt className="inline text-muted print:text-black">{t.startPoint} </dt>
             <dd className="mono inline text-xs">{str(p?.start ?? trace.start)}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Chain: </dt>
+            <dt className="inline text-muted print:text-black">{t.chain} </dt>
             <dd className="inline">{chainMeta(chain).name}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Richtung: </dt>
-            <dd className="inline">{DIRECTION_LABEL[str(p?.direction, "")] ?? str(p?.direction)}</dd>
+            <dt className="inline text-muted print:text-black">{t.directionLabel} </dt>
+            <dd className="inline">
+              {t.direction[str(p?.direction, "") as keyof Texts["direction"]] ?? str(p?.direction)}
+            </dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Modus: </dt>
-            <dd className="inline">{MODE_LABEL[str(p?.mode, "")] ?? str(p?.mode)}</dd>
+            <dt className="inline text-muted print:text-black">{t.modeLabel} </dt>
+            <dd className="inline">{t.mode[str(p?.mode, "") as keyof Texts["mode"]] ?? str(p?.mode)}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Taint-Modell: </dt>
-            <dd className="inline">{TAINT_LABEL[str(p?.taintModel, "")] ?? str(p?.taintModel)}</dd>
+            <dt className="inline text-muted print:text-black">{t.taintLabel} </dt>
+            <dd className="inline">
+              {t.taint[str(p?.taintModel, "") as keyof Texts["taint"]] ?? str(p?.taintModel)}
+            </dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Maximale Tiefe: </dt>
+            <dt className="inline text-muted print:text-black">{t.maxDepth} </dt>
             <dd className="inline">{str(p?.maxDepth)}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Durchgeführt: </dt>
-            <dd className="inline">{isoDate(trace.createdAt)}</dd>
+            <dt className="inline text-muted print:text-black">{t.performed} </dt>
+            <dd className="inline">{fmt.timestamp(trace.createdAt)}</dd>
           </div>
         </dl>
       </div>
 
       {/* Statistik */}
       <div>
-        <h3 className="mb-1 text-sm font-semibold">Statistik</h3>
+        <h3 className="mb-1 text-sm font-semibold">{t.statistics}</h3>
         <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
           <div>
-            <dt className="inline text-gray-400 print:text-black">Adressen: </dt>
+            <dt className="inline text-muted print:text-black">{t.addresses} </dt>
             <dd className="inline">{r.stats?.addresses ?? 0}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Transaktionen: </dt>
+            <dt className="inline text-muted print:text-black">{t.transactions} </dt>
             <dd className="inline">{r.stats?.txs ?? 0}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">API-Aufrufe: </dt>
+            <dt className="inline text-muted print:text-black">{t.apiCalls} </dt>
             <dd className="inline">{r.stats?.apiCalls ?? 0}</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Dauer: </dt>
-            <dd className="inline">{Math.round((r.stats?.durationMs ?? 0) / 100) / 10} s</dd>
+            <dt className="inline text-muted print:text-black">{t.duration} </dt>
+            <dd className="inline">{fmt.number((r.stats?.durationMs ?? 0) / 1000, 1)} s</dd>
           </div>
           <div>
-            <dt className="inline text-gray-400 print:text-black">Abgeschnitten: </dt>
-            <dd className="inline">{r.stats?.truncated ? "ja (Limit erreicht)" : "nein"}</dd>
+            <dt className="inline text-muted print:text-black">{t.truncated} </dt>
+            <dd className="inline">{r.stats?.truncated ? t.truncatedYes : t.truncatedNo}</dd>
           </div>
           {r.stats?.taintedOutSat !== undefined && (
             <div>
-              <dt className="inline text-gray-400 print:text-black">Verunreinigter Abfluss: </dt>
-              <dd className="inline">{formatAmount(r.stats.taintedOutSat, chain)}</dd>
+              <dt className="inline text-muted print:text-black">{t.taintedOutflow} </dt>
+              <dd className="inline">{fmt.amount(r.stats.taintedOutSat, chain)}</dd>
             </div>
           )}
         </dl>
@@ -485,15 +697,17 @@ function TraceSection({ trace, index }: { trace: CaseTrace; index: number }) {
 
       {/* Datenquellen und Warnungen */}
       <div>
-        <h3 className="mb-1 text-sm font-semibold">Verwendete Datenquellen</h3>
+        <h3 className="mb-1 text-sm font-semibold">{t.providersTitle}</h3>
         <p className="text-sm">
-          {providers.length ? providers.map(([n, c]) => `${n} (${c} Abfragen)`).join(", ") : "keine erfasst"}
+          {providers.length
+            ? providers.map(([n, count]) => t.providerQueries(n, count)).join(", ")
+            : t.noneRecorded}
         </p>
         {(r.warnings ?? []).length > 0 && (
           <>
-            <h3 className="mt-2 mb-1 text-sm font-semibold">Warnungen</h3>
+            <h3 className="mt-2 mb-1 text-sm font-semibold">{t.warningsTitle}</h3>
             <ul className="list-disc pl-5 text-sm text-yellow-400 print:text-black">
-              {r.warnings.map((w, i) => (
+              {translateHints(r.warnings, locale).map((w, i) => (
                 <li key={i}>{w}</li>
               ))}
             </ul>
@@ -503,75 +717,72 @@ function TraceSection({ trace, index }: { trace: CaseTrace; index: number }) {
 
       {/* Transaktionen */}
       <div>
-        <h3 className="mb-1 text-sm font-semibold">Transaktionen ({txNodes.length})</h3>
+        <h3 className="mb-1 text-sm font-semibold">{t.txTitle(txNodes.length)}</h3>
         {txNodes.length ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-gray-500 print:text-black">
+              <thead className="text-left text-xs uppercase text-subtle print:text-black">
                 <tr>
-                  <th className="py-1">Zeit</th>
-                  <th>TXID</th>
-                  <th>Ein/Aus</th>
-                  <th>Volumen</th>
-                  <th>Wert (EUR)</th>
-                  <th>Hinweise</th>
+                  <th className="py-1">{t.colTime}</th>
+                  <th>{t.colTxid}</th>
+                  <th>{t.colInOut}</th>
+                  <th>{t.colVolume}</th>
+                  <th>{t.colValueEur}</th>
+                  <th>{t.colNotes}</th>
                 </tr>
               </thead>
               <tbody>
                 {txNodes.map((n) => (
-                  <tr key={n.id} className="border-t border-border align-top print:border-gray-400">
-                    <td className="py-1 whitespace-nowrap">{formatDate(n.data.blockTime)}</td>
+                  <tr key={n.id} className="border-t border-border align-top print:border-muted">
+                    <td className="py-1 whitespace-nowrap">{fmt.date(n.data.blockTime)}</td>
                     <td className="mono py-1 text-xs" title={n.data.txid}>
                       {shortHash(n.data.txid, 8)}
                     </td>
                     <td className="py-1 whitespace-nowrap">
                       {n.data.inputCount} / {n.data.outputCount}
                     </td>
-                    <td className="py-1 whitespace-nowrap">{formatAmount(n.data.totalOutSat, chain)}</td>
+                    <td className="py-1 whitespace-nowrap">{fmt.amount(n.data.totalOutSat, chain)}</td>
                     <td className="py-1 whitespace-nowrap">
-                      {n.data.priceEur ? formatFiat(n.data.totalOutSat, n.data.priceEur, chain) : "–"}
+                      {n.data.priceEur ? fmt.fiat(n.data.totalOutSat, n.data.priceEur, chain) : "–"}
                     </td>
-                    <td className="py-1 text-xs">{(n.data.hints ?? []).join(", ") || "–"}</td>
+                    <td className="py-1 text-xs">{translateHints(n.data.hints, locale).join(", ") || "–"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="text-sm text-gray-500 print:text-black">Keine Transaktionen erfasst.</p>
+          <p className="text-sm text-subtle print:text-black">{t.noTxs}</p>
         )}
       </div>
 
       {/* Herkunft von schädlichen Adressen */}
       {(r.riskSources ?? []).length > 0 && (
         <div>
-          <h3 className="mb-1 text-sm font-semibold">
-            Schädliche Adressen und belastete Flüsse ({(r.riskSources ?? []).length})
-          </h3>
+          <h3 className="mb-1 text-sm font-semibold">{t.riskTitle((r.riskSources ?? []).length)}</h3>
           <p className="mb-1 text-sm">
-            Im Graph stammen {formatAmount(r.stats?.riskInflowSat ?? 0, chain, 5)} bei{" "}
-            {r.stats?.riskAffected ?? 0} Adresse(n) aus gemeldeten Quellen.
+            {t.riskLead(fmt.amount(r.stats?.riskInflowSat ?? 0, chain, 5), r.stats?.riskAffected ?? 0)}
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-gray-500 print:text-black">
+              <thead className="text-left text-xs uppercase text-subtle print:text-black">
                 <tr>
-                  <th className="py-1">Gemeldete Adresse</th>
-                  <th>Einstufung</th>
-                  <th>Quelle</th>
-                  <th className="text-right">weitergegeben</th>
-                  <th className="text-right">betroffene Adressen</th>
+                  <th className="py-1">{t.colReportedAddress}</th>
+                  <th>{t.colVerdict}</th>
+                  <th>{t.colSource}</th>
+                  <th className="text-right">{t.colPassedOn}</th>
+                  <th className="text-right">{t.colAffected}</th>
                 </tr>
               </thead>
               <tbody>
                 {(r.riskSources ?? []).map((rs) => (
-                  <tr key={rs.address} className="border-t border-border print:border-gray-400">
+                  <tr key={rs.address} className="border-t border-border print:border-muted">
                     <td className="mono py-1 text-xs">{rs.address}</td>
                     <td>
-                      {rs.label} ({rs.category ?? "auffällig"})
+                      {rs.label} ({rs.category ? categoryText(rs.category, locale) : t.suspicious})
                     </td>
                     <td className="text-xs">{rs.source}</td>
-                    <td className="text-right">{formatAmount(rs.outflowSat, chain, 5)}</td>
+                    <td className="text-right">{fmt.amount(rs.outflowSat, chain, 5)}</td>
                     <td className="text-right">{rs.affectedAddresses}</td>
                   </tr>
                 ))}
@@ -580,22 +791,22 @@ function TraceSection({ trace, index }: { trace: CaseTrace; index: number }) {
           </div>
           {affectedAddresses.length > 0 && (
             <div className="mt-2 overflow-x-auto">
-              <h4 className="mb-1 text-sm font-semibold">Adressen mit belastetem Zufluss ({affectedAddresses.length})</h4>
+              <h4 className="mb-1 text-sm font-semibold">{t.affectedTitle(affectedAddresses.length)}</h4>
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase text-gray-500 print:text-black">
+                <thead className="text-left text-xs uppercase text-subtle print:text-black">
                   <tr>
-                    <th className="py-1">Adresse</th>
-                    <th className="text-right">belasteter Zufluss</th>
-                    <th className="text-right">Anteil</th>
-                    <th>Herkunft</th>
+                    <th className="py-1">{t.colAddress}</th>
+                    <th className="text-right">{t.colTaintedInflow}</th>
+                    <th className="text-right">{t.colShare}</th>
+                    <th>{t.colOrigin}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {affectedAddresses.map((n) => (
-                    <tr key={n.id} className="border-t border-border print:border-gray-400">
+                    <tr key={n.id} className="border-t border-border print:border-muted">
                       <td className="mono py-1 text-xs">{n.data.address}</td>
-                      <td className="text-right">{formatAmount(n.data.riskFromSat, chain, 5)}</td>
-                      <td className="text-right">{formatPercent(n.data.riskFromRatio ?? 0, 0)}</td>
+                      <td className="text-right">{fmt.amount(n.data.riskFromSat, chain, 5)}</td>
+                      <td className="text-right">{fmt.percent(n.data.riskFromRatio ?? 0, 0)}</td>
                       <td className="mono text-xs">{(n.data.riskSources ?? []).join(", ")}</td>
                     </tr>
                   ))}
@@ -608,36 +819,38 @@ function TraceSection({ trace, index }: { trace: CaseTrace; index: number }) {
 
       {/* Auffällige Adressen */}
       <div>
-        <h3 className="mb-1 text-sm font-semibold">Auffällige Adressen ({notableAddresses.length})</h3>
+        <h3 className="mb-1 text-sm font-semibold">{t.notableTitle(notableAddresses.length)}</h3>
         {notableAddresses.length ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-xs uppercase text-gray-500 print:text-black">
+              <thead className="text-left text-xs uppercase text-subtle print:text-black">
                 <tr>
-                  <th className="py-1">Adresse</th>
-                  <th>Labels</th>
-                  <th>Risiko</th>
-                  <th>Empfangen</th>
-                  <th>Taint-Anteil</th>
-                  <th>Cluster</th>
+                  <th className="py-1">{t.colAddress}</th>
+                  <th>{t.colLabels}</th>
+                  <th>{t.colRisk}</th>
+                  <th>{t.colReceived}</th>
+                  <th>{t.colTaintShare}</th>
+                  <th>{t.colCluster}</th>
                 </tr>
               </thead>
               <tbody>
                 {notableAddresses.map((n) => (
-                  <tr key={n.id} className="border-t border-border align-top print:border-gray-400">
+                  <tr key={n.id} className="border-t border-border align-top print:border-muted">
                     <td className="mono py-1 text-xs" title={n.data.address}>
                       {shortHash(n.data.address, 8)}
-                      {n.data.isStart && <span className="ml-1 not-italic text-accent print:text-black">(Start)</span>}
+                      {n.data.isStart && (
+                        <span className="ml-1 not-italic text-brand print:text-black">{t.startMark}</span>
+                      )}
                     </td>
                     <td className="py-1 text-xs">
                       {(n.data.labels ?? []).length
                         ? n.data.labels.map((l) => `${l.source}: ${l.label}`).join("; ")
                         : "–"}
                     </td>
-                    <td className="py-1">{RISK_LABEL[n.data.risk] ?? n.data.risk}</td>
-                    <td className="py-1 whitespace-nowrap">{formatAmount(n.data.receivedSat, chain)}</td>
+                    <td className="py-1">{t.risk[n.data.risk] ?? n.data.risk}</td>
+                    <td className="py-1 whitespace-nowrap">{fmt.amount(n.data.receivedSat, chain)}</td>
                     <td className="py-1 whitespace-nowrap">
-                      {n.data.taintRatio !== undefined ? formatPercent(n.data.taintRatio) : "–"}
+                      {n.data.taintRatio !== undefined ? fmt.percent(n.data.taintRatio) : "–"}
                     </td>
                     <td className="py-1">{n.data.clusterId !== undefined ? `#${n.data.clusterId}` : "–"}</td>
                   </tr>
@@ -646,64 +859,64 @@ function TraceSection({ trace, index }: { trace: CaseTrace; index: number }) {
             </table>
           </div>
         ) : (
-          <p className="text-sm text-gray-500 print:text-black">Keine auffälligen Adressen.</p>
+          <p className="text-sm text-subtle print:text-black">{t.noNotable}</p>
         )}
       </div>
 
       {/* Cluster */}
       <div>
-        <h3 className="mb-1 text-sm font-semibold">Cluster ({(r.clusters ?? []).length})</h3>
+        <h3 className="mb-1 text-sm font-semibold">{t.clusterTitle((r.clusters ?? []).length)}</h3>
         {(r.clusters ?? []).length ? (
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-gray-500 print:text-black">
+            <thead className="text-left text-xs uppercase text-subtle print:text-black">
               <tr>
-                <th className="py-1">Nr.</th>
-                <th>Adressen</th>
-                <th>Bezeichnung</th>
-                <th>Verhalten</th>
-                <th>Empfangen</th>
-                <th>Herkunft</th>
+                <th className="py-1">{t.colNo}</th>
+                <th>{t.colAddress}</th>
+                <th>{t.colName}</th>
+                <th>{t.colBehaviour}</th>
+                <th>{t.colReceived}</th>
+                <th>{t.colOrigin}</th>
               </tr>
             </thead>
             <tbody>
               {r.clusters.map((c) => (
-                <tr key={c.id} className="border-t border-border align-top print:border-gray-400">
+                <tr key={c.id} className="border-t border-border align-top print:border-muted">
                   <td className="py-1">#{c.id}</td>
                   <td className="py-1">{c.addresses?.length ?? 0}</td>
                   <td className="py-1">{c.label || "–"}</td>
-                  <td className="py-1 text-xs">{(c.behavior ?? []).join(", ") || "–"}</td>
-                  <td className="py-1 whitespace-nowrap">{formatAmount(c.totalReceivedSat, chain)}</td>
-                  <td className="py-1 text-xs">{c.manual ? "manuell zusammengeführt" : "Heuristik"}</td>
+                  <td className="py-1 text-xs">{translateHints(c.behavior, locale).join(", ") || "–"}</td>
+                  <td className="py-1 whitespace-nowrap">{fmt.amount(c.totalReceivedSat, chain)}</td>
+                  <td className="py-1 text-xs">{c.manual ? t.manualMerge : t.heuristic}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p className="text-sm text-gray-500 print:text-black">Keine Cluster gebildet.</p>
+          <p className="text-sm text-subtle print:text-black">{t.noClusters}</p>
         )}
       </div>
 
       {/* Peeling-Ketten */}
       {(r.peeling ?? []).length > 0 && (
         <div>
-          <h3 className="mb-1 text-sm font-semibold">Peeling-Ketten ({r.peeling.length})</h3>
+          <h3 className="mb-1 text-sm font-semibold">{t.peelingTitle(r.peeling.length)}</h3>
           <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-gray-500 print:text-black">
+            <thead className="text-left text-xs uppercase text-subtle print:text-black">
               <tr>
-                <th className="py-1">Nr.</th>
-                <th>Schritte</th>
-                <th>Abgezweigt</th>
-                <th>Rest</th>
-                <th>Erste TXID</th>
+                <th className="py-1">{t.colNo}</th>
+                <th>{t.colSteps}</th>
+                <th>{t.colPeeled}</th>
+                <th>{t.colRemaining}</th>
+                <th>{t.colFirstTxid}</th>
               </tr>
             </thead>
             <tbody>
               {r.peeling.map((chainEntry, i) => (
-                <tr key={i} className="border-t border-border align-top print:border-gray-400">
+                <tr key={i} className="border-t border-border align-top print:border-muted">
                   <td className="py-1">{i + 1}</td>
                   <td className="py-1">{chainEntry.txids?.length ?? 0}</td>
-                  <td className="py-1 whitespace-nowrap">{formatAmount(chainEntry.totalPeeledSat, chain)}</td>
-                  <td className="py-1 whitespace-nowrap">{formatAmount(chainEntry.remainingSat, chain)}</td>
+                  <td className="py-1 whitespace-nowrap">{fmt.amount(chainEntry.totalPeeledSat, chain)}</td>
+                  <td className="py-1 whitespace-nowrap">{fmt.amount(chainEntry.remainingSat, chain)}</td>
                   <td className="mono py-1 text-xs">{chainEntry.txids?.[0] ? shortHash(chainEntry.txids[0], 8) : "–"}</td>
                 </tr>
               ))}
@@ -715,14 +928,17 @@ function TraceSection({ trace, index }: { trace: CaseTrace; index: number }) {
       {/* Aktivitätsmuster */}
       {activity && (activity.total ?? 0) > 0 && (
         <div>
-          <h3 className="mb-1 text-sm font-semibold">Aktivitätsmuster</h3>
+          <h3 className="mb-1 text-sm font-semibold">{t.activityTitle}</h3>
           <p className="text-sm">
-            Ausgewertet wurden {activity.total} Transaktionszeitpunkte. Geschätzte Zeitzone:{" "}
-            {activity.guessedUtcOffset !== undefined
-              ? `UTC${activity.guessedUtcOffset >= 0 ? "+" : ""}${activity.guessedUtcOffset}`
-              : "nicht bestimmbar"}
-            {activity.guessedRegion ? ` (${activity.guessedRegion})` : ""}. Erste Aktivität:{" "}
-            {formatDate(activity.firstSeen)}, letzte Aktivität: {formatDate(activity.lastSeen)}.
+            {t.activityLead(
+              activity.total,
+              (activity.guessedUtcOffset !== undefined
+                ? `UTC${activity.guessedUtcOffset >= 0 ? "+" : ""}${activity.guessedUtcOffset}`
+                : t.notDeterminable) +
+                (activity.guessedRegion ? ` (${translateHint(activity.guessedRegion, locale)})` : ""),
+              fmt.date(activity.firstSeen),
+              fmt.date(activity.lastSeen),
+            )}
           </p>
         </div>
       )}

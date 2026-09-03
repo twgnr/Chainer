@@ -15,8 +15,11 @@ import {
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 import type { AddressNodeData, TraceNode, TraceResult, TxNodeData } from "@/lib/trace/types";
-import { formatAmount, formatDateShort, formatFiat, formatPercent, shortHash } from "@/lib/format";
+import { shortHash, type Formatters } from "@/lib/format";
 import type { ChainId } from "@/lib/chains";
+import { useFormatters, useLocale, useResolvedTheme, useT } from "@/lib/i18n/provider";
+import type { Locale } from "@/lib/i18n/locale";
+import { translateHints } from "@/lib/i18n/hints";
 
 /* ---------------- Ansichtszustand (im Fall speicherbar) ---------------- */
 
@@ -108,7 +111,7 @@ type AnyNode = AddrNode | TxNode | ClusterNode;
  * Damit bleiben die Stufen auch in Graustufen unterscheidbar.
  */
 const riskBorder: Record<AddressNodeData["risk"], string> = {
-  none: "border-2 border-solid border-gray-400",
+  none: "border-2 border-solid border-muted",
   low: "border-2 border-dotted border-blue-300",
   medium: "border-[3px] border-dashed border-yellow-300",
   high: "border-4 border-double border-red-400",
@@ -119,17 +122,133 @@ const riskGlyph: Record<AddressNodeData["risk"], string> = {
   medium: "◆",
   high: "▲",
 };
-const riskText: Record<AddressNodeData["risk"], string> = {
-  none: "",
-  low: "BEKANNT",
-  medium: "MITTEL",
-  high: "HOCH",
-};
-const riskWord: Record<AddressNodeData["risk"], string> = {
-  none: "kein besonderes Risiko",
-  low: "bekannter Dienst",
-  medium: "mittleres Risiko",
-  high: "hohes Risiko",
+const TXT = {
+  en: {
+    riskWord: {
+      none: "no particular risk",
+      low: "known service",
+      medium: "medium risk",
+      high: "high risk",
+    },
+    riskText: { none: "", low: "KNOWN", medium: "MEDIUM", high: "HIGH" },
+    coinbase: "⛏ Coinbase",
+    startNode: "★ START NODE",
+    harmfulAddress: "⚠ harmful address",
+    depositTitle: (percent: number, to: string) => `Forwards ${percent} % on to ${to}`,
+    deposit: "Deposit address",
+    bridge: "bridge",
+    swapService: "swap service",
+    riskInflowFrom: (sources: string) => `Inflow from: ${sources}`,
+    riskInflowGeneric: "Inflow from an address classified as harmful",
+    riskShare: "of harmful origin",
+    fromSource: "from the source",
+    depth: "Depth",
+    cluster: "Cluster",
+    label: "label",
+    patterns: "patterns",
+    notFollowed: "not followed further",
+    then: "then",
+    taintedMoney: "⚠ tainted money",
+    crossChainTo: "to",
+    change: "⟲ change",
+    consolidation: "⚑ consolid.",
+    fee: "Fee",
+    mempool: "· Mempool",
+    addresses: "addresses",
+    containsHarmful: "contains a harmful address",
+    ariaAddress: (short: string) => `Address ${short}`,
+    ariaStartNode: "start node",
+    ariaHarmful: "address classified as harmful",
+    ariaLabel: (label: string) => `label ${label}`,
+    ariaReceived: (amount: string) => `received ${amount}`,
+    ariaSent: (amount: string) => `sent ${amount}`,
+    ariaRiskShare: (percent: string) => `${percent} of harmful origin`,
+    ariaTaintShare: (percent: string) => `${percent} from the source`,
+    ariaCluster: (id: number) => `cluster ${id}`,
+    ariaDepth: (depth: number) => `depth ${depth}`,
+    ariaTx: (short: string) => `Transaction ${short}`,
+    ariaInOut: (inputs: number, outputs: number) => `${inputs} inputs, ${outputs} outputs`,
+    ariaAmount: (amount: string) => `amount ${amount}`,
+    ariaDated: (date: string) => `dated ${date}`,
+    ariaCarriesRisk: "moves tainted money",
+    ariaFailed: "failed",
+    ariaHints: (hints: string) => `notes: ${hints}`,
+    ariaClusterNode: (id: number) => `Cluster ${id}`,
+    ariaAddressCount: (n: number) => `${n} addresses`,
+    ariaContainsHarmful: "contains an address classified as harmful",
+    ariaFlow: (from: string, to: string, text: string) => `Flow from ${from} to ${to}, ${text}`,
+    graphLabel: "Graph of the money flows",
+    graphDescription:
+      "A depiction of money flows between addresses and transactions. Use the tab key to move from node to node, and enter or space to select a node and load its details into the sidebar. Use the arrow keys to move a selected node, and escape to clear the selection. Risk is conveyed by border style, a glyph and a short word in the text as well as by colour; change and tainted flows have their own dash patterns.",
+    counts: (nodes: number, edges: number, ms: string) => `${nodes} nodes · ${edges} edges · layout ${ms} ms`,
+    labelsForced: (edges: number) => `Labels forced on (${edges} edges)`,
+    labelsHidden: (limit: number) => `Labels hidden from ${limit} edges`,
+    hideLabels: "hide",
+    showAnyway: "show anyway",
+  },
+  de: {
+    riskWord: {
+      none: "kein besonderes Risiko",
+      low: "bekannter Dienst",
+      medium: "mittleres Risiko",
+      high: "hohes Risiko",
+    },
+    riskText: { none: "", low: "BEKANNT", medium: "MITTEL", high: "HOCH" },
+    coinbase: "⛏ Coinbase",
+    startNode: "★ STARTKNOTEN",
+    harmfulAddress: "⚠ schädliche Adresse",
+    depositTitle: (percent: number, to: string) => `Leitet ${percent} % an ${to} weiter`,
+    deposit: "Einzahlungsadresse",
+    bridge: "Brücke",
+    swapService: "Tauschdienst",
+    riskInflowFrom: (sources: string) => `Zufluss von: ${sources}`,
+    riskInflowGeneric: "Zufluss von einer als schädlich eingestuften Adresse",
+    riskShare: "von schädlicher Herkunft",
+    fromSource: "aus der Quelle",
+    depth: "Tiefe",
+    cluster: "Cluster",
+    label: "Label",
+    patterns: "Muster",
+    notFollowed: "nicht weiter verfolgt",
+    then: "damals",
+    taintedMoney: "⚠ belastetes Geld",
+    crossChainTo: "an",
+    change: "⟲ Wechselgeld",
+    consolidation: "⚑ Konsolid.",
+    fee: "Gebühr",
+    mempool: "· Mempool",
+    addresses: "Adressen",
+    containsHarmful: "enthält schädliche Adresse",
+    ariaAddress: (short: string) => `Adresse ${short}`,
+    ariaStartNode: "Startknoten",
+    ariaHarmful: "als schädlich eingestufte Adresse",
+    ariaLabel: (label: string) => `Label ${label}`,
+    ariaReceived: (amount: string) => `empfangen ${amount}`,
+    ariaSent: (amount: string) => `gesendet ${amount}`,
+    ariaRiskShare: (percent: string) => `${percent} von schädlicher Herkunft`,
+    ariaTaintShare: (percent: string) => `${percent} aus der Quelle`,
+    ariaCluster: (id: number) => `Cluster ${id}`,
+    ariaDepth: (depth: number) => `Tiefe ${depth}`,
+    ariaTx: (short: string) => `Transaktion ${short}`,
+    ariaInOut: (inputs: number, outputs: number) => `${inputs} Eingänge, ${outputs} Ausgänge`,
+    ariaAmount: (amount: string) => `Betrag ${amount}`,
+    ariaDated: (date: string) => `vom ${date}`,
+    ariaCarriesRisk: "bewegt belastetes Geld",
+    ariaFailed: "fehlgeschlagen",
+    ariaHints: (hints: string) => `Hinweise: ${hints}`,
+    ariaClusterNode: (id: number) => `Cluster ${id}`,
+    ariaAddressCount: (n: number) => `${n} Adressen`,
+    ariaContainsHarmful: "enthält eine als schädlich eingestufte Adresse",
+    ariaFlow: (from: string, to: string, text: string) => `Fluss von ${from} nach ${to}, ${text}`,
+    graphLabel: "Graph der Geldflüsse",
+    graphDescription:
+      "Darstellung von Geldflüssen zwischen Adressen und Transaktionen. Mit der Tabulatortaste wandern Sie von Knoten zu Knoten, mit der Eingabe- oder Leertaste wählen Sie den Knoten aus und laden seine Einzelheiten in die Seitenleiste. Mit den Pfeiltasten verschieben Sie einen ausgewählten Knoten, mit der Escape-Taste heben Sie die Auswahl auf. Risiko wird zusätzlich zur Farbe über Rahmenart, ein Zeichen und ein Kürzel im Text vermittelt; Wechselgeld und belastete Flüsse haben eigene Strichmuster.",
+    counts: (nodes: number, edges: number, ms: string) => `${nodes} Knoten · ${edges} Kanten · Layout ${ms} ms`,
+    labelsForced: (edges: number) => `Beschriftungen erzwungen (${edges} Kanten)`,
+    labelsHidden: (limit: number) => `Beschriftungen ab ${limit} Kanten ausgeblendet`,
+    hideLabels: "ausblenden",
+    showAnyway: "trotzdem zeigen",
+  },
 };
 
 export const CLUSTER_COLORS = [
@@ -163,7 +282,7 @@ function riskColor(ratio: number | undefined): string | undefined {
 }
 
 /** Rahmen für Auswahl (durchgezogen) — der Fokusrahmen kommt aus globals.css */
-const selectedRing = "outline outline-2 outline-offset-2 outline-white";
+const selectedRing = "outline outline-2 outline-offset-2 outline-foreground";
 
 function CommentBadge({ comment }: { comment?: string }) {
   if (!comment) return null;
@@ -176,6 +295,8 @@ function CommentBadge({ comment }: { comment?: string }) {
 
 function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
   const { opts, selectedId, neighbors, comments } = useContext(AppearanceCtx);
+  const t = useT(TXT);
+  const fmt = useFormatters();
   const dim = selectedId !== null && !neighbors.has(id);
   const selected = selectedId === id;
   const main = data.labels.find(
@@ -187,7 +308,7 @@ function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
   return (
     <div
       className={`rounded-md bg-panel px-2 py-1 shadow ${riskBorder[data.risk]} ${
-        data.isStart ? "ring-2 ring-accent ring-offset-2 ring-offset-black" : ""
+        data.isStart ? "ring-2 ring-accent ring-offset-2 ring-offset-background" : ""
       } ${selected ? selectedRing : ""} ${dim ? "opacity-30" : ""}`}
       style={{ minWidth: 195, borderLeftWidth: cc ? 6 : undefined, borderLeftColor: cc }}
       title={data.address}
@@ -196,7 +317,7 @@ function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
       <div className="flex items-center justify-between gap-2">
         <span className="mono text-[11px]">
           <span aria-hidden="true">{riskGlyph[data.risk]} </span>
-          {data.address === "coinbase" ? "⛏ Coinbase" : shortHash(data.address, 7)}
+          {data.address === "coinbase" ? t.coinbase : shortHash(data.address, 7)}
         </span>
         {data.risk !== "none" && (
           <span
@@ -208,33 +329,34 @@ function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
                   : "bg-blue-500 text-white"
             }`}
           >
-            {riskText[data.risk]}
+            {t.riskText[data.risk]}
           </span>
         )}
       </div>
-      {data.isStart && <div className="text-[9px] font-semibold text-accent">★ STARTKNOTEN</div>}
+      {data.isStart && <div className="text-[9px] font-semibold text-brand">{t.startNode}</div>}
       {main && (
-        <div className={`truncate text-[10px] font-medium ${main.own ? "text-green-200" : "text-accent"}`}>
+        <div className={`truncate text-[10px] font-medium ${main.own ? "text-green-200" : "text-brand"}`}>
           {main.own ? "✎ " : ""}
           {main.label}
         </div>
       )}
       {data.isRiskSource && (
         <div className="truncate rounded bg-red-700 px-1 text-[9px] font-semibold text-white">
-          ⚠ schädliche Adresse
+          {t.harmfulAddress}
         </div>
       )}
       {data.deposit && (
         <div
           className="truncate rounded bg-emerald-700 px-1 text-[9px] font-semibold text-white"
-          title={`Leitet ${Math.round(data.deposit.ratio * 100)} % an ${data.deposit.forwardsTo} weiter`}
+          title={t.depositTitle(Math.round(data.deposit.ratio * 100), data.deposit.forwardsTo)}
         >
-          &#8659; Einzahlungsadresse{data.deposit.service ? ` (${data.deposit.service})` : ""}
+          &#8659; {t.deposit}
+          {data.deposit.service ? ` (${data.deposit.service})` : ""}
         </div>
       )}
       {data.swapService && (
         <div className="truncate rounded bg-teal-700 px-1 text-[9px] font-semibold text-white">
-          &#8644; {data.swapService.kind === "bridge" ? "Brücke" : "Tauschdienst"}: {data.swapService.name}
+          &#8644; {data.swapService.kind === "bridge" ? t.bridge : t.swapService}: {data.swapService.name}
         </div>
       )}
       {opts.showRisk && !data.isRiskSource && (data.riskFromRatio ?? 0) > 0.001 && (
@@ -243,19 +365,19 @@ function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
           style={{ background: riskColor(data.riskFromRatio) }}
           title={
             data.riskSources?.length
-              ? `Zufluss von: ${data.riskSources.join(", ")}`
-              : "Zufluss von einer als schädlich eingestuften Adresse"
+              ? t.riskInflowFrom(data.riskSources.join(", "))
+              : t.riskInflowGeneric
           }
         >
-          ⚠ {formatPercent(data.riskFromRatio || 0, 0)} von schädlicher Herkunft
+          ⚠ {fmt.percent(data.riskFromRatio || 0, 0)} {t.riskShare}
         </div>
       )}
-      <div className="flex justify-between gap-2 text-[9px] text-gray-300">
-        <span>↓ {formatAmount(data.receivedSat, data.chain, 4)}</span>
-        <span>↑ {formatAmount(data.sentSat, data.chain, 4)}</span>
+      <div className="flex justify-between gap-2 text-[9px] text-fg-2">
+        <span>↓ {fmt.amount(data.receivedSat, data.chain, 4)}</span>
+        <span>↑ {fmt.amount(data.sentSat, data.chain, 4)}</span>
       </div>
       {opts.showFiat && opts.priceEur !== undefined && (
-        <div className="text-[9px] text-gray-300">≈ {formatFiat(data.receivedSat, opts.priceEur, data.chain)}</div>
+        <div className="text-[9px] text-fg-2">≈ {fmt.fiat(data.receivedSat, opts.priceEur, data.chain)}</div>
       )}
       {tc && (
         <div className="mt-0.5 h-1 w-full rounded bg-gray-700">
@@ -264,15 +386,29 @@ function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
       )}
       {opts.showTaint && (data.taintRatio ?? 0) > 0.001 && (
         <div className="text-[9px]" style={{ color: tc }}>
-          {formatPercent(data.taintRatio || 0, 0)} aus der Quelle
+          {fmt.percent(data.taintRatio || 0, 0)} {t.fromSource}
         </div>
       )}
-      <div className="flex flex-wrap gap-1 text-[9px] text-gray-300">
-        <span>Tiefe {data.depth}</span>
-        {data.clusterId && <span style={{ color: cc }}>· Cluster #{data.clusterId}</span>}
-        {extra > 0 && <span>· {extra} Label</span>}
-        {data.behavior?.length ? <span className="text-cyan-200">· {data.behavior.length} Muster</span> : null}
-        {data.truncated && <span className="text-gray-300">· nicht weiter verfolgt</span>}
+      <div className="flex flex-wrap gap-1 text-[9px] text-fg-2">
+        <span>
+          {t.depth} {data.depth}
+        </span>
+        {data.clusterId && (
+          <span style={{ color: cc }}>
+            · {t.cluster} #{data.clusterId}
+          </span>
+        )}
+        {extra > 0 && (
+          <span>
+            · {extra} {t.label}
+          </span>
+        )}
+        {data.behavior?.length ? (
+          <span className="text-cyan-200">
+            · {data.behavior.length} {t.patterns}
+          </span>
+        ) : null}
+        {data.truncated && <span className="text-fg-2">· {t.notFollowed}</span>}
       </div>
       <CommentBadge comment={comments[id]} />
       <Handle type="source" position={opts.rankdir === "TB" ? Position.Bottom : Position.Right} />
@@ -282,21 +418,23 @@ function AddressNodeView({ id, data }: NodeProps<AddrNode>) {
 
 function TxNodeView({ id, data }: NodeProps<TxNode>) {
   const { opts, selectedId, neighbors, comments } = useContext(AppearanceCtx);
+  const t = useT(TXT);
+  const fmt = useFormatters();
   const dim = selectedId !== null && !neighbors.has(id);
   const selected = selectedId === id;
   const has = (s: string) => data.hints.some((h) => h.includes(s));
   const isCoinJoin = has("CoinJoin");
   return (
     <div
-      className={`rounded-lg bg-black/70 px-2 py-1 ${
+      className={`rounded-lg bg-panel/80 px-2 py-1 ${
         data.carriesRisk && opts.showRisk
           ? "border-[3px] border-dashed border-red-400"
           : isCoinJoin
             ? "border-2 border-dotted border-purple-300"
             : data.failed
               ? "border-[3px] border-double border-red-400"
-              : "border border-dashed border-gray-400"
-      } ${data.isStart ? "ring-2 ring-accent ring-offset-2 ring-offset-black" : ""} ${
+              : "border border-dashed border-muted"
+      } ${data.isStart ? "ring-2 ring-accent ring-offset-2 ring-offset-background" : ""} ${
         selected ? selectedRing : ""
       } ${dim ? "opacity-30" : ""}`}
       style={{ minWidth: 150 }}
@@ -307,33 +445,35 @@ function TxNodeView({ id, data }: NodeProps<TxNode>) {
         <span className="mono text-[10px]">
           <span aria-hidden="true">▭ </span>tx {shortHash(data.txid, 5)}
         </span>
-        <span className="text-[9px] text-gray-300">{formatDateShort(data.blockTime)}</span>
+        <span className="text-[9px] text-fg-2">{fmt.dateShort(data.blockTime)}</span>
       </div>
-      {data.isStart && <div className="text-[9px] font-semibold text-accent">★ STARTKNOTEN</div>}
-      <div className="text-[9px] text-gray-200">
-        {data.inputCount} in → {data.outputCount} out · {formatAmount(data.totalOutSat, data.chain, 4)}
+      {data.isStart && <div className="text-[9px] font-semibold text-brand">{t.startNode}</div>}
+      <div className="text-[9px] text-fg-2">
+        {data.inputCount} in → {data.outputCount} out · {fmt.amount(data.totalOutSat, data.chain, 4)}
       </div>
-      <div className="text-[9px] text-gray-300">
-        Gebühr {formatAmount(data.feeSat, data.chain, 6)} {data.blockHeight ? `· #${data.blockHeight}` : "· Mempool"}
+      <div className="text-[9px] text-fg-2">
+        {t.fee} {fmt.amount(data.feeSat, data.chain, 6)} {data.blockHeight ? `· #${data.blockHeight}` : t.mempool}
       </div>
       {opts.showFiat && data.priceEur !== undefined && (
-        <div className="text-[9px] text-gray-300">damals {formatFiat(data.totalOutSat, data.priceEur, data.chain)}</div>
+        <div className="text-[9px] text-fg-2">
+          {t.then} {fmt.fiat(data.totalOutSat, data.priceEur, data.chain)}
+        </div>
       )}
       {data.carriesRisk && opts.showRisk && (
-        <div className="truncate text-[9px] font-semibold text-red-300">⚠ belastetes Geld</div>
+        <div className="truncate text-[9px] font-semibold text-red-300">{t.taintedMoney}</div>
       )}
       {data.crossChain && (
         <div className="truncate text-[9px] font-semibold text-teal-200" title={data.crossChain.address}>
-          &#8644; an {data.crossChain.service}
+          &#8644; {t.crossChainTo} {data.crossChain.service}
         </div>
       )}
       {data.hints.length > 0 && (
         <div className="flex flex-wrap gap-1 text-[9px]">
-          {has("Wechselgeld") && <span className="text-yellow-200">⟲ Wechselgeld</span>}
+          {has("Wechselgeld") && <span className="text-yellow-200">{t.change}</span>}
           {isCoinJoin && <span className="text-purple-200">⚑ CoinJoin</span>}
           {has("Common-Input") && <span className="text-cyan-200">⚑ Cluster</span>}
           {has("Batch") && <span className="text-blue-200">⚑ Batch</span>}
-          {has("Konsolidierung") && <span className="text-green-200">⚑ Konsolid.</span>}
+          {has("Konsolidierung") && <span className="text-green-200">{t.consolidation}</span>}
           {has("Lightning") && <span className="text-sky-200">⚡ Lightning</span>}
           {data.peelingIndex && <span className="text-orange-200">⚑ Peeling {data.peelingIndex}</span>}
         </div>
@@ -346,6 +486,8 @@ function TxNodeView({ id, data }: NodeProps<TxNode>) {
 
 function ClusterNodeView({ id, data }: NodeProps<ClusterNode>) {
   const { opts, selectedId, neighbors, comments } = useContext(AppearanceCtx);
+  const t = useT(TXT);
+  const fmt = useFormatters();
   const dim = selectedId !== null && !neighbors.has(id);
   const selected = selectedId === id;
   const cc = clusterColor(data.clusterId);
@@ -358,25 +500,27 @@ function ClusterNodeView({ id, data }: NodeProps<ClusterNode>) {
     >
       <Handle type="target" position={opts.rankdir === "TB" ? Position.Top : Position.Left} />
       <div className="text-[11px] font-semibold" style={{ color: cc }}>
-        ▣ Cluster #{data.clusterId}
-        {data.risk !== "none" && <span className="ml-1 text-gray-200">({riskText[data.risk]})</span>}
+        ▣ {t.cluster} #{data.clusterId}
+        {data.risk !== "none" && <span className="ml-1 text-fg-2">({t.riskText[data.risk]})</span>}
       </div>
-      {data.label && <div className="truncate text-[10px] text-accent">{data.label}</div>}
-      <div className="text-[9px] text-gray-300">
-        {data.count} Adressen · ↓ {formatAmount(data.receivedSat, data.chain, 4)}
+      {data.label && <div className="truncate text-[10px] text-brand">{data.label}</div>}
+      <div className="text-[9px] text-fg-2">
+        {data.count} {t.addresses} · ↓ {fmt.amount(data.receivedSat, data.chain, 4)}
       </div>
       {data.hasRiskSource && (
         <div className="truncate rounded bg-red-700 px-1 text-[9px] font-semibold text-white">
-          &#9888; enthält schädliche Adresse
+          &#9888; {t.containsHarmful}
         </div>
       )}
       {opts.showRisk && !data.hasRiskSource && data.riskFromSat > 0 && (
         <div className="text-[9px] font-semibold text-red-300">
-          &#9888; {formatAmount(data.riskFromSat, data.chain, 4)} von schädlicher Herkunft
+          &#9888; {fmt.amount(data.riskFromSat, data.chain, 4)} {t.riskShare}
         </div>
       )}
       {opts.showTaint && data.taintSat > 0 && (
-        <div className="text-[9px] text-orange-200">{formatAmount(data.taintSat, data.chain, 4)} aus der Quelle</div>
+        <div className="text-[9px] text-orange-200">
+          {fmt.amount(data.taintSat, data.chain, 4)} {t.fromSource}
+        </div>
       )}
       <CommentBadge comment={comments[id]} />
       <Handle type="source" position={opts.rankdir === "TB" ? Position.Bottom : Position.Right} />
@@ -388,40 +532,46 @@ const nodeTypes = { address: AddressNodeView, tx: TxNodeView, cluster: ClusterNo
 
 /* ---------------- Beschriftungen für Screenreader ---------------- */
 
-function addressAria(d: AddressNodeData): string {
-  const parts = [`Adresse ${d.address === "coinbase" ? "Coinbase" : shortHash(d.address, 7)}`, riskWord[d.risk]];
-  if (d.isStart) parts.push("Startknoten");
-  if (d.isRiskSource) parts.push("als schädlich eingestufte Adresse");
+type Texts = (typeof TXT)[Locale];
+
+function addressAria(d: AddressNodeData, t: Texts, fmt: Formatters, locale: Locale): string {
+  const parts = [
+    t.ariaAddress(d.address === "coinbase" ? "Coinbase" : shortHash(d.address, 7)),
+    t.riskWord[d.risk],
+  ];
+  if (d.isStart) parts.push(t.ariaStartNode);
+  if (d.isRiskSource) parts.push(t.ariaHarmful);
   const main = d.labels.find((l) => l.own || (l.category !== "wallet" && l.category !== "other"));
-  if (main) parts.push(`Label ${main.label}`);
-  parts.push(`empfangen ${formatAmount(d.receivedSat, d.chain, 4)}`);
-  parts.push(`gesendet ${formatAmount(d.sentSat, d.chain, 4)}`);
-  if ((d.riskFromRatio ?? 0) > 0.001) parts.push(`${formatPercent(d.riskFromRatio || 0, 0)} von schädlicher Herkunft`);
-  if ((d.taintRatio ?? 0) > 0.001) parts.push(`${formatPercent(d.taintRatio || 0, 0)} aus der Quelle`);
-  if (d.clusterId) parts.push(`Cluster ${d.clusterId}`);
-  parts.push(`Tiefe ${d.depth}`);
+  if (main) parts.push(t.ariaLabel(main.label));
+  parts.push(t.ariaReceived(fmt.amount(d.receivedSat, d.chain, 4)));
+  parts.push(t.ariaSent(fmt.amount(d.sentSat, d.chain, 4)));
+  if ((d.riskFromRatio ?? 0) > 0.001) parts.push(t.ariaRiskShare(fmt.percent(d.riskFromRatio || 0, 0)));
+  if ((d.taintRatio ?? 0) > 0.001) parts.push(t.ariaTaintShare(fmt.percent(d.taintRatio || 0, 0)));
+  if (d.clusterId) parts.push(t.ariaCluster(d.clusterId));
+  parts.push(t.ariaDepth(d.depth));
+  void locale;
   return parts.join(", ");
 }
 
-function txAria(d: TxNodeData): string {
-  const parts = [`Transaktion ${shortHash(d.txid, 5)}`];
-  if (d.isStart) parts.push("Startknoten");
-  parts.push(`${d.inputCount} Eingänge, ${d.outputCount} Ausgänge`);
-  parts.push(`Betrag ${formatAmount(d.totalOutSat, d.chain, 4)}`);
-  if (d.blockTime) parts.push(`vom ${formatDateShort(d.blockTime)}`);
-  if (d.carriesRisk) parts.push("bewegt belastetes Geld");
-  if (d.failed) parts.push("fehlgeschlagen");
-  if (d.hints.length) parts.push(`Hinweise: ${d.hints.join("; ")}`);
-  parts.push(`Tiefe ${d.depth}`);
+function txAria(d: TxNodeData, t: Texts, fmt: Formatters, locale: Locale): string {
+  const parts = [t.ariaTx(shortHash(d.txid, 5))];
+  if (d.isStart) parts.push(t.ariaStartNode);
+  parts.push(t.ariaInOut(d.inputCount, d.outputCount));
+  parts.push(t.ariaAmount(fmt.amount(d.totalOutSat, d.chain, 4)));
+  if (d.blockTime) parts.push(t.ariaDated(fmt.dateShort(d.blockTime)));
+  if (d.carriesRisk) parts.push(t.ariaCarriesRisk);
+  if (d.failed) parts.push(t.ariaFailed);
+  if (d.hints.length) parts.push(t.ariaHints(translateHints(d.hints, locale).join("; ")));
+  parts.push(t.ariaDepth(d.depth));
   return parts.join(", ");
 }
 
-function clusterAria(d: ClusterData): string {
-  const parts = [`Cluster ${d.clusterId}`, riskWord[d.risk]];
-  if (d.label) parts.push(`Label ${d.label}`);
-  parts.push(`${d.count} Adressen`);
-  parts.push(`empfangen ${formatAmount(d.receivedSat, d.chain, 4)}`);
-  if (d.hasRiskSource) parts.push("enthält eine als schädlich eingestufte Adresse");
+function clusterAria(d: ClusterData, t: Texts, fmt: Formatters): string {
+  const parts = [t.ariaClusterNode(d.clusterId), t.riskWord[d.risk]];
+  if (d.label) parts.push(t.ariaLabel(d.label));
+  parts.push(t.ariaAddressCount(d.count));
+  parts.push(t.ariaReceived(fmt.amount(d.receivedSat, d.chain, 4)));
+  if (d.hasRiskSource) parts.push(t.ariaContainsHarmful);
   return parts.join(", ");
 }
 
@@ -530,6 +680,9 @@ function buildStructure(
   onlyRisk: boolean,
   hiddenIds: string[],
   collapsedIds: number[],
+  t: Texts,
+  fmt: Formatters,
+  locale: Locale,
 ): GraphStructure {
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
   const chain = result.params.chain;
@@ -676,13 +829,18 @@ function buildStructure(
   for (const n of result.nodes) {
     if (hidden.has(n.id) || clusterOf.has(n.id) || !passesRisk(n.id)) continue;
     if (n.data.type === "address") {
-      nodes.push({ id: n.id, type: "address", data: n.data as AddrNode["data"], ariaLabel: addressAria(n.data) });
+      nodes.push({
+        id: n.id,
+        type: "address",
+        data: n.data as AddrNode["data"],
+        ariaLabel: addressAria(n.data, t, fmt, locale),
+      });
     } else {
-      nodes.push({ id: n.id, type: "tx", data: n.data as TxNode["data"], ariaLabel: txAria(n.data) });
+      nodes.push({ id: n.id, type: "tx", data: n.data as TxNode["data"], ariaLabel: txAria(n.data, t, fmt, locale) });
     }
   }
   for (const [id, data] of clusterNodes) {
-    nodes.push({ id, type: "cluster", data: data as ClusterNode["data"], ariaLabel: clusterAria(data) });
+    nodes.push({ id, type: "cluster", data: data as ClusterNode["data"], ariaLabel: clusterAria(data, t, fmt) });
   }
 
   const maxValueSat = Math.max(1, ...visibleEdges.map((e) => e.valueSat));
@@ -709,6 +867,10 @@ export default function TraceGraph({
   onMoveNode?: (id: string, position: { x: number; y: number }) => void;
   height?: string;
 }) {
+  const t = useT(TXT);
+  const fmt = useFormatters();
+  const locale = useLocale();
+  const theme = useResolvedTheme();
   const chain = result.params.chain;
   const descId = useId();
 
@@ -725,8 +887,11 @@ export default function TraceGraph({
         opts.onlyRisk,
         hiddenKey ? hiddenKey.split(" ") : [],
         collapsedKey ? collapsedKey.split(",").map(Number) : [],
+        t,
+        fmt,
+        locale,
       ),
-    [result, opts.rankdir, opts.hideChange, opts.onlyRisk, hiddenKey, collapsedKey],
+    [result, opts.rankdir, opts.hideChange, opts.onlyRisk, hiddenKey, collapsedKey, t, fmt, locale],
   );
 
   // Knotenobjekte: nur Struktur und Position. Darstellung läuft über den Kontext,
@@ -798,7 +963,7 @@ export default function TraceGraph({
       const hot = !!selectedId && (e.source === selectedId || e.target === selectedId);
       const dim = !!selectedId && !hot;
       const fiat =
-        opts.showFiat && opts.priceEur !== undefined ? ` (${formatFiat(e.valueSat, opts.priceEur, chain)})` : "";
+        opts.showFiat && opts.priceEur !== undefined ? ` (${fmt.fiat(e.valueSat, opts.priceEur, chain)})` : "";
       const ratio = e.valueSat > 0 ? e.taintSat / e.valueSat : 0;
       const riskRatio = e.valueSat > 0 ? e.riskSat / e.valueSat : 0;
       const tc = opts.showTaint ? taintColor(ratio) : undefined;
@@ -808,7 +973,7 @@ export default function TraceGraph({
       // Strichmuster statt reiner Farbe: jede Art von Fluss ist auch in
       // Graustufen unterscheidbar.
       const dash = e.change ? "2 3" : e.toRisk ? "6 3" : e.token ? "4 2" : warn ? "10 4" : undefined;
-      const text = `${warn ? "⚠ " : ""}${e.token ? `${e.token} ` : ""}${formatAmount(e.valueSat, chain, 5)}${fiat}${
+      const text = `${warn ? "⚠ " : ""}${e.token ? `${e.token} ` : ""}${fmt.amount(e.valueSat, chain, 5)}${fiat}${
         e.change ? " ⟲" : ""
       }`;
       return {
@@ -816,23 +981,25 @@ export default function TraceGraph({
         source: e.source,
         target: e.target,
         label: showLabels ? text : undefined,
-        ariaLabel: `Fluss von ${e.source} nach ${e.target}, ${text}`,
+        ariaLabel: t.ariaFlow(e.source, e.target, text),
         labelStyle: {
-          fill: dim ? "#94a3b8" : warn ? "#fca5a5" : e.change ? "#fbbf24" : "#e2e8f0",
+          fill: dim ? "var(--subtle)" : warn ? "var(--color-red-400)" : e.change ? "var(--color-yellow-500)" : "var(--foreground)",
           fontSize: 9,
           fontWeight: warn ? 600 : 400,
         },
-        labelBgStyle: { fill: "#0b0f17", fillOpacity: 0.85 },
+        labelBgStyle: { fill: "var(--background)", fillOpacity: 0.85 },
         animated: (e.change || warn) && !dim,
         style: {
-          stroke: hot ? "#ffffff" : rc || tc || (e.change ? "#fbbf24" : e.coinbase ? "#22c55e" : "#94a3b8"),
+          stroke: hot
+            ? "var(--foreground)"
+            : rc || tc || (e.change ? "#eab308" : e.coinbase ? "#22c55e" : "var(--muted)"),
           strokeWidth: (hot ? 2 : 1) + (warn ? 1 : 0) + 4 * Math.sqrt(e.valueSat / maxVal),
           opacity: dim ? 0.25 : 1,
           strokeDasharray: dash,
         },
       };
     });
-  }, [structure, selectedId, showLabels, chain, opts.showFiat, opts.showTaint, opts.showRisk, opts.priceEur]);
+  }, [structure, selectedId, showLabels, chain, opts.showFiat, opts.showTaint, opts.showRisk, opts.priceEur, t, fmt]);
 
   const byId = useMemo(() => new Map(result.nodes.map((n) => [n.id, n])), [result]);
 
@@ -849,41 +1016,35 @@ export default function TraceGraph({
 
   return (
     <div
-      className="relative min-h-[340px] w-full rounded-lg border border-border bg-black/30"
+      className="relative min-h-[340px] w-full rounded-lg border border-border bg-panel/40"
       style={{ height }}
       role="application"
-      aria-label="Graph der Geldflüsse"
+      aria-label={t.graphLabel}
       aria-describedby={descId}
     >
       <p id={descId} className="sr-only">
-        Darstellung von Geldflüssen zwischen Adressen und Transaktionen. Mit der Tabulatortaste wandern Sie von Knoten
-        zu Knoten, mit der Eingabe- oder Leertaste wählen Sie den Knoten aus und laden seine Einzelheiten in die
-        Seitenleiste. Mit den Pfeiltasten verschieben Sie einen ausgewählten Knoten, mit der Escape-Taste heben Sie die
-        Auswahl auf. Risiko wird zusätzlich zur Farbe über Rahmenart, ein Zeichen und ein Kürzel im Text vermittelt;
-        Wechselgeld und belastete Flüsse haben eigene Strichmuster.
+        {t.graphDescription}
       </p>
 
       <div
-        className="pointer-events-none absolute right-2 top-2 z-10 rounded border border-border bg-panel/90 px-2 py-1 text-[10px] text-gray-300"
+        className="pointer-events-none absolute right-2 top-2 z-10 rounded border border-border bg-panel/90 px-2 py-1 text-[10px] text-fg-2"
         aria-hidden="true"
       >
-        {nodeCount} Knoten · {edgeCount} Kanten · Layout {structure.layoutMs.toFixed(1)} ms
+        {t.counts(nodeCount, edgeCount, fmt.number(structure.layoutMs, 1))}
       </div>
 
       {overLimit && (
-        <div className="absolute left-2 top-2 z-10 flex items-center gap-2 rounded border border-border bg-panel/90 px-2 py-1 text-[10px] text-gray-300">
+        <div className="absolute left-2 top-2 z-10 flex items-center gap-2 rounded border border-border bg-panel/90 px-2 py-1 text-[10px] text-fg-2">
           <span>
-            {showLabels
-              ? `Beschriftungen erzwungen (${edgeCount} Kanten)`
-              : `Beschriftungen ab ${labelLimit} Kanten ausgeblendet`}
+            {showLabels ? t.labelsForced(edgeCount) : t.labelsHidden(labelLimit)}
           </span>
           <button
             type="button"
-            className="rounded border border-border px-1 py-0.5 text-gray-100 hover:bg-white/10"
+            className="rounded border border-border px-1 py-0.5 text-foreground hover:bg-hover"
             onClick={() => setForceLabels((v) => !v)}
             aria-pressed={showLabels}
           >
-            {showLabels ? "ausblenden" : "trotzdem zeigen"}
+            {showLabels ? t.hideLabels : t.showAnyway}
           </button>
         </div>
       )}
@@ -893,21 +1054,28 @@ export default function TraceGraph({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
-          onNodesChange={(changes) =>
-            setNodes((ns) => {
-              const moved = new Map<string, { x: number; y: number }>();
-              for (const c of changes) {
-                if (c.type !== "position" || !c.position) continue;
-                moved.set(c.id, c.position);
-                if (c.dragging === false && onMoveNode) onMoveNode(c.id, c.position);
-              }
-              if (moved.size === 0) return ns;
-              return ns.map((n) => {
-                const p = moved.get(n.id);
-                return p ? ({ ...n, position: p } as AnyNode) : n;
-              });
-            })
-          }
+          onNodesChange={(changes) => {
+            const moved = new Map<string, { x: number; y: number }>();
+            const dropped: [string, { x: number; y: number }][] = [];
+            for (const c of changes) {
+              if (c.type !== "position" || !c.position) continue;
+              moved.set(c.id, c.position);
+              if (c.dragging === false) dropped.push([c.id, c.position]);
+            }
+            if (moved.size > 0) {
+              setNodes((ns) =>
+                ns.map((n) => {
+                  const p = moved.get(n.id);
+                  return p ? ({ ...n, position: p } as AnyNode) : n;
+                }),
+              );
+            }
+            // Erst nach dem Loslassen melden, und bewusst ausserhalb des
+            // Zustands-Updaters: der muss frei von Nebenwirkungen bleiben,
+            // sonst setzt er beim erneuten Auswerten den Zustand der
+            // übergeordneten Komponente mitten im Rendern.
+            if (onMoveNode) for (const [id, position] of dropped) onMoveNode(id, position);
+          }}
           onNodeClick={(_, n) => select(n.id)}
           // Auswahl per Tastatur (Eingabe-/Leertaste) meldet React Flow hierüber
           onSelectionChange={({ nodes: sel }) => {
@@ -920,7 +1088,7 @@ export default function TraceGraph({
           fitView
           minZoom={0.03}
           proOptions={{ hideAttribution: true }}
-          colorMode="dark"
+          colorMode={theme}
         >
           <Background />
           <Controls />
