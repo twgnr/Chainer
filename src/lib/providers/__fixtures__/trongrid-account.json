@@ -1,0 +1,91 @@
+{
+  "data": [
+    {
+      "free_asset_net_usageV2": [
+        {
+          "value": 0,
+          "key": "1002963"
+        },
+        {
+          "value": 0,
+          "key": "1002721"
+        },
+        {
+          "value": 0,
+          "key": "1004108"
+        },
+        {
+          "value": 0,
+          "key": "1002962"
+        },
+        {
+          "value": 0,
+          "key": "1003812"
+        }
+      ],
+      "account_resource": {
+        "energy_window_optimized": true,
+        "energy_window_size": 28800000
+      },
+      "assetV2": [
+        {
+          "value": 58000000,
+          "key": "1002963"
+        },
+        {
+          "value": 20000000,
+          "key": "1002721"
+        },
+        {
+          "value": 456870300,
+          "key": "1004108"
+        },
+        {
+          "value": 20000000,
+          "key": "1002962"
+        },
+        {
+          "value": 10000000,
+          "key": "1003812"
+        }
+      ],
+      "frozenV2": [
+        {},
+        {
+          "type": "ENERGY"
+        },
+        {
+          "type": "TRON_POWER"
+        }
+      ],
+      "address": "41a614f803b6fd780986a42c78ec9c7f77e6ded13c",
+      "balance": 1086031213536,
+      "trc20": [
+        {
+          "TS6dcmkzuthz48t3HsWEmGxKGtv19icco1": "999666888000000000000000001"
+        },
+        {
+          "TKj8VFCycvvEoqQgnXZeKQKReAZvtZzss1": "1000000000"
+        },
+        {
+          "TRJBaa45MDFySvqkGZj1yNat7PiXbsawv1": "10000000000000000000"
+        },
+        {
+          "TSELJRnY38ssL8Lu3wA5mLV1AHzouGxrE2": "1000000000"
+        },
+        {
+          "TEuffRtZGe3p8a4KTRyeN4xnpku4HWDyJ2": "1205903671756"
+        }
+      ],
+      "account_name": "546574686572546f6b656e",
+      "net_window_size": 28800000,
+      "type": "Contract",
+      "net_window_optimized": true
+    }
+  ],
+  "success": true,
+  "meta": {
+    "at": 1788429089957,
+    "page_size": 1
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "recordedAt": "2026-09-03T09:56:59.906Z",
+  "btcAddress": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+  "btcTxid": "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16",
+  "btcCoinbaseTxid": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
+  "evmAddress": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+  "evmTxid": "0x57b7db530069df7cc29ea116de89c3a1c0794c795e5812d9bc8cab366bd97217",
+  "tronAddress": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+  "tronTxid": "f69b827f897325516328d70c410d41c7df44faef59fed7b5f56453f1f5639078"
+}

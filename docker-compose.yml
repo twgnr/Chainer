@@ -1,0 +1,56 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Standardmäßig nur im internen Netz erreichbar. Zum Debuggen einkommentieren:
+    # ports:
+    #   - "27017:27017"
+
+  chainer:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/chainer
+      # Pflicht: zufälligen Wert setzen, z. B. mit
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET muss gesetzt sein}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      # Optionale Schlüssel der Datenquellen
+      BLOCKCYPHER_TOKEN: ${BLOCKCYPHER_TOKEN:-}
+      BLOCKCHAIR_KEY: ${BLOCKCHAIR_KEY:-}
+      CHAINABUSE_KEY: ${CHAINABUSE_KEY:-}
+      ETHERSCAN_KEY: ${ETHERSCAN_KEY:-}
+      BITCOINWHOSWHO_KEY: ${BITCOINWHOSWHO_KEY:-}
+      # Eigene Infrastruktur
+      BITCOIN_RPC_URL: ${BITCOIN_RPC_URL:-}
+      BITCOIN_RPC_USER: ${BITCOIN_RPC_USER:-}
+      BITCOIN_RPC_PASSWORD: ${BITCOIN_RPC_PASSWORD:-}
+      ELECTRUM_HOST: ${ELECTRUM_HOST:-}
+      ELECTRUM_PORT: ${ELECTRUM_PORT:-50002}
+      ELECTRUM_PROTOCOL: ${ELECTRUM_PROTOCOL:-ssl}
+      # Benachrichtigungen und Watchlist
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      WATCH_INTERVAL_MINUTES: ${WATCH_INTERVAL_MINUTES:-}
+      CRON_SECRET: ${CRON_SECRET:-}
+
+volumes:
+  mongo-data:

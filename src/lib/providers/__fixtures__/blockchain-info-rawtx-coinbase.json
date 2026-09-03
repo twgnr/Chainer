@@ -1,0 +1,50 @@
+{
+  "hash": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
+  "ver": 1,
+  "vin_sz": 1,
+  "vout_sz": 1,
+  "size": 134,
+  "weight": 536,
+  "fee": 0,
+  "relayed_by": "0.0.0.0",
+  "lock_time": 0,
+  "tx_index": 5352466621385076,
+  "double_spend": false,
+  "time": 1231469665,
+  "block_index": 1,
+  "block_height": 1,
+  "inputs": [
+    {
+      "sequence": 4294967295,
+      "witness": "",
+      "script": "04ffff001d0104",
+      "index": 0,
+      "prev_out": {
+        "type": 0,
+        "spent": true,
+        "value": 0,
+        "spending_outpoints": [
+          {
+            "tx_index": 5352466621385076,
+            "n": 0
+          }
+        ],
+        "n": 4294967295,
+        "tx_index": 0,
+        "script": ""
+      }
+    }
+  ],
+  "out": [
+    {
+      "type": 0,
+      "spent": false,
+      "value": 5000000000,
+      "spending_outpoints": [],
+      "n": 0,
+      "tx_index": 5352466621385076,
+      "script": "410496b538e853519c726a2c91e61ec11600ae1390813a627c66fb8be7947be63c52da7589379515d4e0a604f8141781e62294721166bf621e73a82cbf2342c858eeac",
+      "addr": "12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX"
+    }
+  ]
+}

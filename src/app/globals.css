@@ -1,26 +1,111 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0b0f17;
+  --foreground: #e6e9ef;
+  --panel: #121826;
+  --border: #243044;
+  --accent: #f7931a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.card {
+  @apply rounded-lg border border-border bg-panel p-4;
+}
+.btn {
+  @apply inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-black hover:brightness-110 disabled:opacity-50;
+}
+.btn-secondary {
+  @apply inline-flex items-center gap-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm hover:bg-white/5 disabled:opacity-50;
+}
+.input {
+  @apply w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent;
+}
+.label {
+  @apply mb-1 block text-xs uppercase tracking-wide text-gray-400;
+}
+.mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+.react-flow__node {
+  font-size: 11px;
+}
+.react-flow__attribution {
+  display: none;
+}
+
+/* Auf kleinen Bildschirmen dürfen breite Inhalte (Tabellen) waagerecht scrollen,
+   statt das Seitenlayout zu sprengen. */
+@media (max-width: 768px) {
+  .card {
+    overflow-x: auto;
+  }
+  .react-flow__controls,
+  .react-flow__minimap {
+    transform: scale(0.8);
+    transform-origin: bottom left;
+  }
+}
+
+/* Druckausgabe: dunkles Design zurücknehmen */
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+}
+
+/* ---------- Graph: Tastaturbedienung sichtbar machen ---------- */
+/* Der Fokusrahmen (gestrichelt, in der Akzentfarbe) unterscheidet sich bewusst
+   vom Auswahlrahmen (durchgezogen, weiß) an den Knoten selbst. */
+.react-flow__node:focus {
+  outline: none;
+}
+.react-flow__node:focus-visible {
+  outline: 3px dashed var(--accent);
+  outline-offset: 5px;
+  border-radius: 10px;
+}
+.react-flow__edge:focus-visible {
+  outline: 2px dashed var(--accent);
+}
+
+/* ---------- Bewegung reduzieren ---------- */
+/* Wer im Betriebssystem weniger Bewegung wünscht, bekommt weder laufende
+   Kanten noch pulsierende Elemente. */
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge.animated path,
+  .react-flow__edge-path {
+    animation: none !important;
+  }
+  .animate-pulse,
+  .animate-spin,
+  .animate-bounce,
+  .animate-ping {
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
