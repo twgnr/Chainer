@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# C++ desktop application (desktop/) - details in desktop/.gitignore
+/desktop/build/
+*.obj
+*.pdb
+*.ilk
+*.exe

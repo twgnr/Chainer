@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# Chainer Desktop (C++ / MSVC)
+# ---------------------------------------------------------------------------
+
+# Ergebnis von build.bat
+build/
+out/
+bin/
+obj/
+
+# Übersetzungs- und Bindeergebnisse
+*.obj
+*.o
+*.lib
+*.a
+*.exp
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.idb
+*.res
+*.tlog
+*.iobj
+*.ipdb
+*.log
+
+# Zwischenstände von /Zi und /analyze
+*.sbr
+*.bsc
+*.pch
+*.ipch
+*.nativecodeanalysis.xml
+
+# Visual Studio / VS Code
+.vs/
+*.vcxproj.user
+*.sln.docstates
+*.suo
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+CMakeSettings.json
+compile_commands.json
+
+# CMake, falls jemand damit baut
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+_deps/
+install_manifest.txt
+
+# Absturzberichte
+*.dmp
+*.stackdump
