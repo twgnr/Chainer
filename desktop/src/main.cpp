@@ -146,6 +146,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_LBUTTONDOWN:
         SetCapture(hwnd);
         SetFocus(hwnd);
+        in.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         in.mx = toDipX(lp);
         in.my = toDipY(lp);
         in.down = true;
@@ -154,6 +155,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
 
     case WM_LBUTTONDBLCLK:
+        SetCapture(hwnd);
+        in.mx = toDipX(lp);
+        in.my = toDipY(lp);
         in.doubleClick = true;
         in.pressed = true;
         in.down = true;
@@ -234,6 +238,12 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow) {
                                    (IUnknown**)&g_dw)))
         return 1;
 
+    // Programmsymbol aus den Ressourcen (siehe version.rc)
+    HICON iconBig = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                      GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
+    HICON iconSmall = (HICON)LoadImageW(hInst, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
+
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -241,6 +251,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow) {
     wc.hInstance = hInst;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
+    wc.hIcon = iconBig;
+    wc.hIconSm = iconSmall;
     wc.lpszClassName = L"ChainerDesktopWindow";
     RegisterClassExW(&wc);
 

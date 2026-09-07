@@ -92,17 +92,45 @@ Kopfleiste umgeschaltet, genau wie auf der Webseite; beides wird gemerkt.
 
 ## Wie der Trace arbeitet
 
-Adressbasierte Breitensuche über die Provider-Schnittstellen: von der
-Startadresse werden die Transaktionen geladen, daraus entstehen Adress- und
+**Adressbasiert** (Vorgabe): Breitensuche über die Provider-Schnittstellen. Von
+der Startadresse werden die Transaktionen geladen, daraus entstehen Adress- und
 Transaktionsknoten, und die Gegenseiten bilden die nächste Ebene — vorwärts
-entlang der Ausgänge, rückwärts entlang der Eingänge, oder beides. Tiefe,
-Transaktionen je Adresse, Adressen je Transaktion, Mindestbetrag und
-Knotenobergrenze begrenzen den Lauf.
+entlang der Ausgänge, rückwärts entlang der Eingänge, oder beides.
 
-Danach werden Labels geladen, Cluster über die gemeinsame Eingangsheuristik
-gebildet und belastete Zuflüsse markiert. Jede Abfrage landet im Protokoll der
-Beweissicherung: Zeitpunkt, Statuscode und die SHA-256-Prüfsumme der Antwort,
-dazu eine Gesamtprüfsumme über alle Einträge.
+**UTXO-genau**: verfolgt nicht die Adresse, sondern die konkreten Coins. Jeder
+Ausgang wird einzeln weiterverfolgt: wohin wurde genau dieser Ausgang
+ausgegeben? Dazu fragt die Anwendung die Outspends der Transaktion ab und lädt
+die ausgebende Transaktion. Ein Ausgang, der noch niemandem weitergereicht
+wurde, wird als *noch nicht ausgegeben* vermerkt. Startet man mit einer
+Transaktion, gelten deren Ausgänge als Anfang; startet man mit einer Adresse,
+werden die Ausgänge verfolgt, die an sie zahlen. Weil Konto-Ketten (EVM, Tron)
+keine unverbrauchten Ausgänge kennen, steht der Modus dort nicht zur Wahl.
+
+Tiefe, Transaktionen je Adresse, Adressen je Transaktion, Mindestbetrag und
+Knotenobergrenze begrenzen den Lauf in beiden Modi.
+
+### Taint-Modelle
+
+Nach dem Durchlauf wird verteilt, wie viel des Geldes aus der Startquelle
+stammt. Die Transaktionen werden dazu chronologisch abgearbeitet:
+
+| Modell | Regel |
+| --- | --- |
+| **Haircut** (anteilig) | Jeder Ausgang erbt den Anteil der gesamten Transaktion. Konservativ und weit verbreitet, verwässert aber über viele Hops. |
+| **FIFO** (Reihenfolge) | „First in, first out“: Eingänge werden der Reihe nach den Ausgängen zugeordnet. Entspricht der Rechtsprechung in mehreren Ländern (Clayton's Case). |
+| **Poison** (streng) | Sobald eine Transaktion belastetes Geld enthält, gelten alle ihre Ausgänge als vollständig belastet. |
+| **keins** | Keine Taint-Rechnung. Die Herkunftswarnung nutzt dann Haircut. |
+
+Das Ergebnis steht an jeder Kante und jedem Knoten: Betrag und Anteil aus der
+Quelle, dazu die Summe, die an den Endpunkten des Graphen liegen bleibt. Für die
+Herkunftswarnung läuft dieselbe Rechnung ein zweites Mal, diesmal ausgehend von
+allen als schädlich gemeldeten Adressen — mit den Adressen, aus denen das Geld
+stammt, und dem Betrag, der direkt an eine solche Adresse ging.
+
+Danach werden Labels geladen und Cluster über die gemeinsame Eingangsheuristik
+gebildet. Jede Abfrage landet im Protokoll der Beweissicherung: Zeitpunkt,
+Statuscode und die SHA-256-Prüfsumme der Antwort, dazu eine Gesamtprüfsumme
+über alle Einträge.
 
 Alle Abfragen laufen in Hintergrund-Threads; die Oberfläche bleibt bedienbar und
 ein laufender Trace lässt sich abbrechen.
@@ -120,6 +148,7 @@ src/
   net.*           HTTP über WinHTTP, Hintergrundaufträge, Beweissicherung (SHA-256)
   providers.*     Die Datenquellen und die Erkennung von Adressen und Transaktions-IDs
   live.cpp        Abfragen, Trace-Suche, Wegsuche, Massenprüfung, Watchlist-Prüfung
+  taint.*         Die Taint-Modelle (Haircut, FIFO, Poison)
   widgets.cpp     Gemeinsame Bausteine, Trace-Graph, Aktivitätsmuster
   trace_panel.cpp Das Seitenpanel des Graphen
   pages_a.cpp     Suche, Trace, Verbindung, Massenprüfung

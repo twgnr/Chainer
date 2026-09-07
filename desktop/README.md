@@ -90,17 +90,43 @@ the header exactly as on the website, and both choices are remembered.
 
 ## How the trace works
 
-An address-based breadth-first search over the provider interfaces: the
-transactions of the starting address are loaded, address and transaction nodes
-are built from them, and the counterparties form the next level — forward along
-the outputs, backward along the inputs, or both. Depth, transactions per
-address, addresses per transaction, minimum amount and the node cap bound the
-run.
+**Address-based** (the default): a breadth-first search over the provider
+interfaces. The transactions of the starting address are loaded, address and
+transaction nodes are built from them, and the counterparties form the next
+level — forward along the outputs, backward along the inputs, or both.
 
-Afterwards labels are fetched, clusters are formed through the common-input
-heuristic and tainted inflows are marked. Every query goes into the evidence
-log: time, status code and the SHA-256 checksum of the answer, plus an overall
-checksum across all entries.
+**UTXO-exact**: follows the actual coins rather than the address. Every output
+is followed on its own: where was this particular output spent? The application
+asks for the outspends of the transaction and loads the spending transaction. An
+output nobody has passed on yet is marked *not spent yet*. Starting from a
+transaction, its outputs are the beginning; starting from an address, the
+outputs paying to it are followed. Account chains (EVM, Tron) have no unspent
+outputs, so the mode is not offered there.
+
+Depth, transactions per address, addresses per transaction, minimum amount and
+the node cap bound the run in both modes.
+
+### Taint models
+
+After the traversal the share of money coming from the starting source is
+distributed. Transactions are processed in chronological order:
+
+| Model | Rule |
+| --- | --- |
+| **Haircut** (proportional) | Every output inherits the share of the whole transaction. Conservative and widely used, but dilutes over many hops. |
+| **FIFO** (order) | “First in, first out”: inputs are matched to outputs in order. This matches case law in several countries (Clayton's Case). |
+| **Poison** (strict) | As soon as a transaction contains tainted money, all of its outputs count as fully tainted. |
+| **none** | No taint calculation. The origin warning then uses haircut. |
+
+The result sits on every edge and node: amount and share from the source, plus
+the total that remains at the endpoints of the graph. For the origin warning the
+same calculation runs a second time, this time seeded from every address
+reported as harmful — including the addresses the money came from and the amount
+that went straight to such an address.
+
+Afterwards labels are fetched and clusters are formed through the common-input
+heuristic. Every query goes into the evidence log: time, status code and the
+SHA-256 checksum of the answer, plus an overall checksum across all entries.
 
 All queries run on background threads; the interface stays responsive and a
 running trace can be cancelled.
@@ -118,6 +144,7 @@ src/
   net.*           HTTP over WinHTTP, background jobs, evidence log (SHA-256)
   providers.*     the data sources and the detection of addresses and txids
   live.cpp        queries, trace search, path search, bulk check, watch check
+  taint.*         the taint models (haircut, FIFO, poison)
   widgets.cpp     shared building blocks, trace graph, activity heatmap
   trace_panel.cpp the graph side panel
   pages_a.cpp     Search, Trace, Connection, Bulk check

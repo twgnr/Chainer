@@ -179,6 +179,11 @@ static float traceForm(App& a, float x, float y, float w) {
     std::vector<std::wstring> chainNames;
     for (const ChainMeta& m : CHAINS) chainNames.push_back(m.name + L" (" + m.symbol + L")");
     std::vector<std::wstring> modes = {tr(L"address-based", L"adressbasiert"), tr(L"UTXO-exact", L"UTXO-genau")};
+    // Konto-Ketten (EVM, Tron) kennen keine unverbrauchten Ausgänge.
+    if (!isUtxoChain(a.traceChain)) {
+        modes.resize(1);
+        a.traceMode = 0;
+    }
     std::vector<std::wstring> dirs = {tr(L"Forward (where to?)", L"Vorwärts (wohin?)"),
                                       tr(L"Backward (where from?)", L"Rückwärts (woher?)"),
                                       tr(L"Both", L"Beides")};
@@ -358,11 +363,13 @@ static float traceStats(App& a, float x, float y, float w) {
         tooltip(u, r, tr(L"Money in the graph that comes from harmful addresses",
                          L"Geld im Graph, das von schädlichen Adressen stammt"));
     }
-    if (a.optTaint) {
-        std::wstring s = fmtAmount((double)t.taintedOutSat, chain.decimals, chain.symbol, 4) +
+    if (t.taintedOutSat > 0) {
+        std::wstring s = fmtAmount(t.taintedOutSat, chain.decimals, chain.symbol, 4) +
                          tr(L" traced", L" verfolgt");
         Rect r = row.place(textW(u, s, fSm()), 20.f);
         u.p->text(s, r, fSm(), th.tw(Tw::Orange300));
+        tooltip(u, r, tr(L"Amount from the starting source that sits at endpoints in the graph",
+                         L"Betrag aus der Startquelle, der an Endpunkten im Graph liegt"));
     }
     {
         std::wstring providers;
@@ -611,6 +618,20 @@ static float traceRiskPanel(App& a, float x, float y, float w) {
                   i >= 3 ? Align::Right : Align::Left);
     }
     cy += 22.f;
+    int riskRows = 0;
+    for (const GNode& n : a.trace.nodes)
+        if (n.isRiskSource || n.riskFromRatio > 0.001) riskRows++;
+    if (!riskRows) {
+        std::wstring none = tr(L"None of the addresses checked is reported as harmful. The check runs "
+                               L"against the OFAC sanctions list, Ransomwhere, CryptoScamDB, "
+                               L"WalletExplorer and your own labels.",
+                               L"Keine der geprüften Adressen ist als schädlich gemeldet. Geprüft wird "
+                               L"gegen die OFAC-Sanktionsliste, Ransomwhere, CryptoScamDB, WalletExplorer "
+                               L"und die eigenen Labels.");
+        float nh = textH(u, none, fSm(), innerW);
+        u.p->text(none, Rect(cx, cy, innerW, nh), fSm(), th.subtle, Align::Left, true);
+        cy += nh;
+    }
     for (const GNode& n : a.trace.nodes) {
         if (!n.isRiskSource && n.riskFromRatio <= 0.001) continue;
         hline(u, cx, cy, innerW, th.border);
@@ -627,9 +648,7 @@ static float traceRiskPanel(App& a, float x, float y, float w) {
         u.p->text(n.labelSource, Rect(colX[2], ty, colX[3] - colX[2] - 8.f, 20.f), fSm(), th.muted);
         u.p->text(fmtPercent(n.isRiskSource ? 1.0 : n.riskFromRatio, 0),
                   Rect(colX[3], ty, colX[4] - colX[3] - 8.f, 20.f), fSm(), th.foreground, Align::Right);
-        u.p->text(fmtAmount((double)(n.isRiskSource ? n.receivedSat
-                                                    : (long long)(n.receivedSat * n.riskFromRatio)),
-                            chain.decimals, chain.symbol, 4),
+        u.p->text(fmtAmount(n.isRiskSource ? n.sentSat : n.riskFromSat, chain.decimals, chain.symbol, 4),
                   Rect(colX[4], ty, colX[5] - colX[4], 20.f), fSm(), th.fg2, Align::Right);
         cy += 32.f;
     }

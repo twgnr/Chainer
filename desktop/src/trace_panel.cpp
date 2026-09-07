@@ -180,11 +180,10 @@ float traceSidePanel(App& a, float x, float y, float w, float h) {
         line(tr(L"Sent:", L"Gesendet:"), fmtAmount((double)sel->sentSat, chain.decimals, chain.symbol),
              th.foreground, false);
 
-        if (a.optTaint && sel->taintRatio > 0) {
+        if (sel->taintSat > 0) {
             std::wstring s = tr(L"From the source: ", L"Aus der Quelle: ") +
-                             fmtAmount((double)sel->receivedSat * sel->taintRatio, chain.decimals,
-                                       chain.symbol, 4) +
-                             L" (" + fmtPercent(sel->taintRatio) + L")";
+                             fmtAmount(sel->taintSat, chain.decimals, chain.symbol, 4) + L" (" +
+                             fmtPercent(sel->taintRatio) + L")";
             u.p->text(s, Rect(cx, cy, innerW, 24.f), fBase(), th.tw(Tw::Orange300));
             cy += 24.f;
         }
@@ -207,16 +206,41 @@ float traceSidePanel(App& a, float x, float y, float w, float h) {
             u.p->text(L"⚠ " + tr(L"Tainted inflow", L"Belasteter Zufluss"),
                       Rect(cx + 8.f, iy, innerW - 16.f, 16.f), fXs(Wt::Semibold), th.tw(Tw::Red300));
             iy += 18.f;
-            std::wstring body = fmtAmount((double)sel->receivedSat * sel->riskFromRatio, chain.decimals,
-                                          chain.symbol, 4) +
-                                L" (" + fmtPercent(sel->riskFromRatio) +
+            std::wstring body = fmtAmount(sel->riskFromSat, chain.decimals, chain.symbol, 4) + L" (" +
+                                fmtPercent(sel->riskFromRatio) +
                                 tr(L" of the inflow) comes from addresses classified as harmful.",
                                    L" des Zuflusses) stammen von als schädlich eingestuften Adressen.");
             float bh = textH(u, body, fXs(), innerW - 16.f);
             u.p->text(body, Rect(cx + 8.f, iy, innerW - 16.f, bh), fXs(), th.foreground, Align::Left, true);
-            iy += bh + 8.f;
+            iy += bh + 6.f;
+            // Aus welchen Adressen stammt es?
+            for (size_t i = 0; i < sel->riskSources.size() && i < 6; i++) {
+                Rect sr(cx + 8.f, iy, innerW - 16.f, 15.f);
+                Color sc = u.mouseIn(sr) ? th.brand : th.tw(Tw::Red300);
+                if (u.mouseIn(sr)) {
+                    u.cursorHand = true;
+                    if (u.in.pressed) a.go(Page::Address, sel->riskSources[i]);
+                }
+                u.p->text(shortHash(sel->riskSources[i], 8), sr, mPx(11.f), sc);
+                iy += 15.f;
+            }
+            iy += 8.f;
             u.p->patchRoundRect(box, Rect(cx, boxTop, innerW, iy - boxTop), R_SM, &bbg, &bbd, 1.f);
             cy = iy + 8.f;
+        }
+
+        // Direkt an eine schädliche Adresse gezahlt?
+        if (sel->sentToRiskSat > 0) {
+            Color wbd = th.tw(Tw::Orange500).op(0.6f).over(th.panel);
+            Color wbg = th.tw(Tw::Orange950).op(0.3f).over(th.panel);
+            std::wstring s2 = L"⚠ " + fmtAmount(sel->sentToRiskSat, chain.decimals, chain.symbol, 4) +
+                              tr(L" went straight to an address classified as harmful.",
+                                 L" gingen direkt an eine als schädlich eingestufte Adresse.");
+            float wh = textH(u, s2, fXs(), innerW - 16.f) + 8.f;
+            u.p->roundRect(Rect(cx, cy, innerW, wh), R_SM, &wbg, &wbd, 1.f);
+            u.p->text(s2, Rect(cx + 8.f, cy + 4.f, innerW - 16.f, wh), fXs(), th.tw(Tw::Orange200),
+                      Align::Left, true);
+            cy += wh + 8.f;
         }
 
         // Verbindungen
@@ -233,9 +257,10 @@ float traceSidePanel(App& a, float x, float y, float w, float h) {
             std::wstring s = (out ? std::wstring(L"→ tx ") : std::wstring(L"← tx ")) +
                              shortHash(other.substr(2), 5);
             u.p->text(s, Rect(cx, cy, innerW, 16.f), mXs(), th.foreground);
-            std::wstring v = fmtAmount((double)e.valueSat, chain.decimals, chain.symbol, 5) +
+            std::wstring v = fmtAmount(e.valueSat, chain.decimals, chain.symbol, 5) +
                              (e.change ? L" ⟲" : L"");
-            u.p->text(v, Rect(cx, cy, innerW, 16.f), fXs(), th.foreground, Align::Right);
+            u.p->text(v, Rect(cx, cy, innerW, 16.f), fXs(),
+                      e.riskSat > 0 ? th.tw(Tw::Red300) : th.foreground, Align::Right);
             cy += 18.f;
         }
         cy += 8.f;

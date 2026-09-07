@@ -1,0 +1,54 @@
+// ---------------------------------------------------------------------------
+// version.rc - Programmsymbol und Dateiangaben.
+//
+// Damit zeigt der Explorer unter „Eigenschaften -> Details" Version, Autor und
+// Beschreibung an, und die Anwendung bekommt ihr Symbol in Taskleiste und
+// Fenstertitel.
+// ---------------------------------------------------------------------------
+#include <windows.h>
+
+#define IDI_APPICON 1
+
+IDI_APPICON ICON "chainer.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION     0,95,6,0
+ PRODUCTVERSION  0,95,6,0
+ FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+ FILEFLAGS       0
+ FILEOS          VOS_NT_WINDOWS32
+ FILETYPE        VFT_APP
+ FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040704b0"   // Deutsch (Deutschland), Unicode
+        BEGIN
+            VALUE "CompanyName",      "Tobias Wagner (twgnr)"
+            VALUE "FileDescription",  "Chainer - Blockchain-Tracing"
+            VALUE "FileVersion",      "0.95.06"
+            VALUE "InternalName",     "Chainer"
+            VALUE "LegalCopyright",   "Copyright (c) by Tobias Wagner (twgnr)"
+            VALUE "OriginalFilename", "Chainer.exe"
+            VALUE "ProductName",      "Chainer Desktop"
+            VALUE "ProductVersion",   "0.95.06"
+            VALUE "Comments",         "https://github.com/twgnr/Chainer"
+        END
+        BLOCK "000904b0"   // Englisch (USA), Unicode
+        BEGIN
+            VALUE "CompanyName",      "Tobias Wagner (twgnr)"
+            VALUE "FileDescription",  "Chainer - blockchain tracing"
+            VALUE "FileVersion",      "0.95.06"
+            VALUE "InternalName",     "Chainer"
+            VALUE "LegalCopyright",   "Copyright (c) by Tobias Wagner (twgnr)"
+            VALUE "OriginalFilename", "Chainer.exe"
+            VALUE "ProductName",      "Chainer Desktop"
+            VALUE "ProductVersion",   "0.95.06"
+            VALUE "Comments",         "https://github.com/twgnr/Chainer"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0407, 1200, 0x0009, 1200
+    END
+END

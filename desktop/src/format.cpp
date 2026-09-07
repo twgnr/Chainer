@@ -128,3 +128,6 @@ const ChainMeta& chainAt(int i) {
     if (i < 0 || i >= (int)CHAINS.size()) return CHAINS[0];
     return CHAINS[(size_t)i];
 }
+
+// Nur Ketten mit unverbrauchten Ausgängen erlauben UTXO-genaues Verfolgen.
+bool isUtxoChain(int i) { return chainAt(i).utxo; }

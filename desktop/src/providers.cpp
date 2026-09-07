@@ -1018,6 +1018,59 @@ NetTx netFetchTx(int chain, const std::wstring& txid, const ProviderKeys& k) {
 }
 
 // ---------------------------------------------------------------------------
+// Outspends: wohin ist jeder Ausgang geflossen?
+//
+// Esplora beantwortet das direkt. Bei Blockchair und BlockCypher steht die
+// ausgebende Transaktion schon in der Transaktion selbst, deshalb wird sie
+// dort einfach noch einmal geladen.
+// ---------------------------------------------------------------------------
+std::vector<NetOutspend> netFetchOutspends(int chain, const std::wstring& txid, const ProviderKeys& k) {
+    std::vector<NetOutspend> out;
+    const wchar_t* base = esploraBase(chain);
+    if (base) {
+        Json j;
+        if (getJson(std::wstring(base) + L"/tx/" + urlEncode(txid) + L"/outspends", j, nullptr, 15000) &&
+            j.t == Json::T::Arr) {
+            for (const Json& e : j.arr) {
+                NetOutspend o;
+                o.spent = e.flag(L"spent");
+                o.txid = e.s(L"txid");
+                o.vin = (int)e.i(L"vin", -1);
+                out.push_back(o);
+            }
+            if (!out.empty()) return out;
+        }
+        const wchar_t* base2 = esploraBase2(chain);
+        if (base2) {
+            Json j2;
+            if (getJson(std::wstring(base2) + L"/tx/" + urlEncode(txid) + L"/outspends", j2, nullptr,
+                        15000) &&
+                j2.t == Json::T::Arr) {
+                for (const Json& e : j2.arr) {
+                    NetOutspend o;
+                    o.spent = e.flag(L"spent");
+                    o.txid = e.s(L"txid");
+                    o.vin = (int)e.i(L"vin", -1);
+                    out.push_back(o);
+                }
+                if (!out.empty()) return out;
+            }
+        }
+    }
+    // Ausweg: die Transaktion selbst trägt die ausgebenden Transaktionen
+    NetTx tx = netFetchTx(chain, txid, k);
+    if (tx.ok) {
+        for (const NetTxOut& o : tx.outputs) {
+            NetOutspend s2;
+            s2.spent = o.spent || !o.spentTxid.empty();
+            s2.txid = o.spentTxid;
+            out.push_back(s2);
+        }
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // Kurse (CoinGecko, Fallback Blockchain.com)
 // ---------------------------------------------------------------------------
 bool netFetchPrice(int chain, double* eur, double* usd, std::wstring* source) {

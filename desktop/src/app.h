@@ -9,6 +9,7 @@
 #include "ui.h"
 #include "providers.h"
 #include "net.h"
+#include "taint.h"
 #include <string>
 #include <vector>
 
@@ -39,6 +40,7 @@ struct ChainMeta {
 };
 extern const std::vector<ChainMeta> CHAINS;
 const ChainMeta& chainAt(int i);
+bool isUtxoChain(int i);
 
 // --- Anwendung -------------------------------------------------------------
 // Reine lokale Anwendung: keine Anmeldung, keine Datenbank, kein Netzverkehr.
@@ -136,7 +138,12 @@ struct GNode {
     long long blockTime = 0, blockHeight = 0;
     bool isStart = false, isRiskSource = false, coinbase = false, change = false;
     bool carriesRisk = false, coinjoin = false, deposit = false;
+    bool notFollowed = false;              // wegen der Grenzen nicht weiterverfolgt
     std::wstring depositService, swapService;
+    double taintSat = 0;                   // Betrag aus der Startquelle
+    double riskFromSat = 0;                // Betrag aus schädlichen Adressen
+    double sentToRiskSat = 0;              // ging direkt an eine schädliche Adresse
+    std::vector<std::wstring> riskSources; // Adressen, aus denen es stammt
     int behaviorCount = 0, extraLabels = 0;
     float x = 0, y = 0, w = 0, h = 0;   // vom Layout gesetzt
 };
@@ -144,6 +151,8 @@ struct GNode {
 struct GEdge {
     std::wstring from, to;
     double valueSat = 0;
+    double taintSat = 0;   // Anteil aus der Startquelle
+    double riskSat = 0;    // Anteil aus schädlichen Adressen
     bool change = false, coinbase = false, risky = false;
 };
 
@@ -159,6 +168,7 @@ struct TraceData {
     double priceEur = 0;
     std::vector<std::wstring> providersUsed;
     long long startedAt = 0;
+    TaintModel taintModel = TaintModel::Haircut;
     std::vector<EvidenceEntry> evidence;
     std::wstring evidenceDigest;
 };

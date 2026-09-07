@@ -254,40 +254,88 @@ static void clampCaret(Ui& u, const std::wstring& v) {
     if (u.caret > (int)v.size()) u.caret = (int)v.size();
 }
 
+// --- Auswahl (Markierung) --------------------------------------------------
+// Der markierte Bereich liegt zwischen `selAnchor` und `caret`. Ist kein Anker
+// gesetzt (-1), gibt es keine Markierung.
+static bool hasSelection(const Ui& u) { return u.selAnchor >= 0 && u.selAnchor != u.caret; }
+
+static void selectionRange(const Ui& u, int& from, int& to) {
+    from = (std::min)(u.selAnchor, u.caret);
+    to = (std::max)(u.selAnchor, u.caret);
+}
+
+// Löscht den markierten Bereich; true, wenn etwas entfernt wurde.
+static bool deleteSelection(Ui& u, std::wstring& v) {
+    if (!hasSelection(u)) return false;
+    int from, to;
+    selectionRange(u, from, to);
+    from = (std::max)(0, (std::min)(from, (int)v.size()));
+    to = (std::max)(0, (std::min)(to, (int)v.size()));
+    v.erase((size_t)from, (size_t)(to - from));
+    u.caret = from;
+    u.selAnchor = -1;
+    return true;
+}
+
+// Vor einer Bewegung: mit Umschalt den Anker setzen, ohne ihn löschen.
+static void beforeMove(Ui& u, bool shift) {
+    if (shift) {
+        if (u.selAnchor < 0) u.selAnchor = u.caret;
+    } else {
+        u.selAnchor = -1;
+    }
+}
+
 // Gemeinsame Tastenbehandlung fuer ein- und mehrzeilige Felder.
 static bool editKeys(Ui& u, std::wstring& v, bool multiline) {
     bool changed = false;
     clampCaret(u, v);
+    bool shift = u.in.shift;
     for (UINT k : u.in.keys) {
         switch (k) {
-        case VK_LEFT:  if (u.caret > 0) u.caret--; break;
-        case VK_RIGHT: if (u.caret < (int)v.size()) u.caret++; break;
-        case VK_HOME:  u.caret = 0; break;
-        case VK_END:   u.caret = (int)v.size(); break;
+        case VK_LEFT:
+            beforeMove(u, shift);
+            if (u.caret > 0) u.caret--;
+            break;
+        case VK_RIGHT:
+            beforeMove(u, shift);
+            if (u.caret < (int)v.size()) u.caret++;
+            break;
+        case VK_HOME:
+            beforeMove(u, shift);
+            u.caret = 0;
+            break;
+        case VK_END:
+            beforeMove(u, shift);
+            u.caret = (int)v.size();
+            break;
         case VK_DELETE:
-            if (u.caret < (int)v.size()) { v.erase((size_t)u.caret, 1); changed = true; }
+            if (deleteSelection(u, v)) {
+                changed = true;
+            } else if (u.caret < (int)v.size()) {
+                v.erase((size_t)u.caret, 1);
+                changed = true;
+            }
             break;
         case VK_UP:
         case VK_DOWN:
             if (multiline) {
-                // Zeilenweise bewegen
+                beforeMove(u, shift);
+                // Zeilenweise bewegen: Spalte merken, Zeile wechseln
                 int line = 0, col = 0;
                 for (int i = 0; i < u.caret; i++) {
                     if (v[(size_t)i] == L'\n') { line++; col = 0; } else col++;
                 }
                 int target = (k == VK_UP) ? line - 1 : line + 1;
                 if (target >= 0) {
-                    int cur = 0, pos = 0, c2 = 0;
-                    int best = -1;
+                    int cur = 0, c2 = 0, best = -1;
                     for (int i = 0; i <= (int)v.size(); i++) {
                         if (cur == target && (c2 == col || i == (int)v.size() || v[(size_t)i] == L'\n')) {
                             best = i;
                             if (c2 == col) break;
                         }
                         if (i < (int)v.size() && v[(size_t)i] == L'\n') { cur++; c2 = 0; } else c2++;
-                        pos = i;
                     }
-                    (void)pos;
                     if (best >= 0) u.caret = best;
                 }
             }
@@ -296,19 +344,75 @@ static bool editKeys(Ui& u, std::wstring& v, bool multiline) {
         }
     }
     for (wchar_t ch : u.in.chars) {
-        if (ch == 8) {  // Backspace
-            if (u.caret > 0) { v.erase((size_t)u.caret - 1, 1); u.caret--; changed = true; }
+        if (ch == 8) {   // Rücktaste
+            if (deleteSelection(u, v)) {
+                changed = true;
+            } else if (u.caret > 0) {
+                v.erase((size_t)u.caret - 1, 1);
+                u.caret--;
+                changed = true;
+            }
         } else if (ch == 13 || ch == 10) {
-            if (multiline) { v.insert((size_t)u.caret, 1, L'\n'); u.caret++; changed = true; }
-        } else if (ch == 1) {  // Ctrl+A
+            if (multiline) {
+                deleteSelection(u, v);
+                v.insert((size_t)u.caret, 1, L'\n');
+                u.caret++;
+                changed = true;
+            }
+        } else if (ch == 1) {   // Strg+A: alles markieren
+            u.selAnchor = 0;
             u.caret = (int)v.size();
+        } else if (ch == 3 || ch == 24) {   // Strg+C / Strg+X
+            if (hasSelection(u)) {
+                int from, to;
+                selectionRange(u, from, to);
+                std::wstring part = v.substr((size_t)from, (size_t)(to - from));
+                if (OpenClipboard(nullptr)) {
+                    EmptyClipboard();
+                    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, (part.size() + 1) * sizeof(wchar_t));
+                    if (h) {
+                        wchar_t* dst = (wchar_t*)GlobalLock(h);
+                        if (dst) {
+                            wcscpy_s(dst, part.size() + 1, part.c_str());
+                            GlobalUnlock(h);
+                            SetClipboardData(CF_UNICODETEXT, h);
+                        }
+                    }
+                    CloseClipboard();
+                }
+                if (ch == 24 && deleteSelection(u, v)) changed = true;
+            }
+        } else if (ch == 22) {   // Strg+V
+            if (OpenClipboard(nullptr)) {
+                HANDLE h = GetClipboardData(CF_UNICODETEXT);
+                if (h) {
+                    const wchar_t* src = (const wchar_t*)GlobalLock(h);
+                    if (src) {
+                        std::wstring paste = src;
+                        GlobalUnlock(h);
+                        if (!multiline) {
+                            std::wstring flat;
+                            for (wchar_t c : paste)
+                                if (c != L'\r' && c != L'\n') flat += c;
+                            paste = flat;
+                        }
+                        deleteSelection(u, v);
+                        v.insert((size_t)u.caret, paste);
+                        u.caret += (int)paste.size();
+                        changed = true;
+                    }
+                }
+                CloseClipboard();
+            }
         } else if (ch >= 32) {
+            deleteSelection(u, v);
             v.insert((size_t)u.caret, 1, ch);
             u.caret++;
             changed = true;
         }
     }
     clampCaret(u, v);
+    if (u.selAnchor > (int)v.size()) u.selAnchor = (int)v.size();
     return changed;
 }
 
@@ -316,15 +420,29 @@ bool inputBox(Ui& u, const std::wstring& id, Rect r, std::wstring& value,
               const std::wstring& placeholder, bool mono, float fontSize, bool password) {
     bool over = u.mouseIn(r);
     bool focused = (u.focusId == id);
+    Font editFont(mono ? Fam::Mono : Fam::Sans, fontSize);
     if (over) {
         u.cursorText = true;
         if (u.in.pressed) {
             if (!focused) { u.focusId = id; focused = true; }
-            u.caret = u.p->caretIndexAt(value, Font(mono ? Fam::Mono : Fam::Sans, fontSize),
-                                        u.in.mx - (r.x + INPUT_PADX));
+            std::wstring probe = password ? std::wstring(value.size(), L'•') : value;
+            int at = u.p->caretIndexAt(probe, editFont, u.in.mx - (r.x + INPUT_PADX));
+            if (u.in.doubleClick) {
+                // Doppelklick markiert das ganze Feld
+                u.selAnchor = 0;
+                u.caret = (int)value.size();
+            } else {
+                u.caret = at;
+                u.selAnchor = u.in.shift ? (u.selAnchor < 0 ? at : u.selAnchor) : at;
+            }
+        } else if (u.in.down && focused && u.activeId.empty()) {
+            // Ziehen erweitert die Markierung
+            std::wstring probe = password ? std::wstring(value.size(), L'•') : value;
+            u.caret = u.p->caretIndexAt(probe, editFont, u.in.mx - (r.x + INPUT_PADX));
         }
     } else if (u.in.pressed && focused) {
         u.focusId.clear();
+        u.selAnchor = -1;
         focused = false;
     }
 
@@ -332,11 +450,20 @@ bool inputBox(Ui& u, const std::wstring& id, Rect r, std::wstring& value,
     Color bg = u.th.background;
     u.p->roundRect(r, R_MD, &bg, &bd, 1.f);
 
-    Font f(mono ? Fam::Mono : Fam::Sans, fontSize);
+    const Font& f = editFont;
     float lh = u.p->lineHeight(f);
     float ty = r.y + (r.h - lh) * .5f;
     u.p->clipPush(Rect(r.x + 2, r.y, r.w - 4, r.h));
     std::wstring shown = password ? std::wstring(value.size(), L'•') : value;
+    // Markierung hinter dem Text
+    if (focused && hasSelection(u)) {
+        int from, to;
+        selectionRange(u, from, to);
+        float x0 = r.x + INPUT_PADX + u.p->caretX(shown, f, from);
+        float x1 = r.x + INPUT_PADX + u.p->caretX(shown, f, to);
+        Color sel = u.th.accent.op(0.28f);
+        u.p->roundRect(Rect(x0, ty, (std::max)(1.f, x1 - x0), lh), 2.f, &sel, nullptr);
+    }
     if (shown.empty() && !placeholder.empty() && !focused) {
         u.p->text(placeholder, Rect(r.x + INPUT_PADX, ty, r.w, lh), f, u.th.subtle);
     } else {
@@ -364,9 +491,20 @@ bool textArea(Ui& u, const std::wstring& id, Rect r, std::wstring& value,
     bool focused = (u.focusId == id);
     if (over) {
         u.cursorText = true;
-        if (u.in.pressed) { u.focusId = id; focused = true; u.caret = (int)value.size(); }
+        if (u.in.pressed) {
+            u.focusId = id;
+            focused = true;
+            if (u.in.doubleClick) {
+                u.selAnchor = 0;
+                u.caret = (int)value.size();
+            } else {
+                u.caret = (int)value.size();
+                u.selAnchor = -1;
+            }
+        }
     } else if (u.in.pressed && focused) {
         u.focusId.clear();
+        u.selAnchor = -1;
         focused = false;
     }
     Color bd = focused ? u.th.accent : u.th.border;
@@ -389,6 +527,19 @@ bool textArea(Ui& u, const std::wstring& id, Rect r, std::wstring& value,
         size_t nl = value.find(L'\n', start);
         std::wstring lineStr = value.substr(start, (nl == std::wstring::npos ? value.size() : nl) - start);
         float y = ty + lineIdx * lh;
+        // Markierung dieser Zeile
+        if (focused && hasSelection(u) && y < r.b() - 2) {
+            int from, to;
+            selectionRange(u, from, to);
+            int lineFrom = (std::max)(from - consumed, 0);
+            int lineTo = (std::min)(to - consumed, (int)lineStr.size());
+            if (lineTo > lineFrom) {
+                float x0 = r.x + INPUT_PADX + u.p->caretX(lineStr, f, lineFrom);
+                float x1 = r.x + INPUT_PADX + u.p->caretX(lineStr, f, lineTo);
+                Color sel = u.th.accent.op(0.28f);
+                u.p->roundRect(Rect(x0, y, (std::max)(1.f, x1 - x0), lh), 2.f, &sel, nullptr);
+            }
+        }
         if (y < r.b() - 2) u.p->text(lineStr, Rect(r.x + INPUT_PADX, y, r.w - 2 * INPUT_PADX, lh), f, u.th.foreground);
         if (focused && u.caret >= consumed && u.caret <= consumed + (int)lineStr.size()) {
             caretX = r.x + INPUT_PADX + u.p->caretX(lineStr, f, u.caret - consumed);

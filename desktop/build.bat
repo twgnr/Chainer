@@ -22,11 +22,15 @@ if errorlevel 1 goto no_vs
 :have_compiler
 if not exist build mkdir build
 
-set "SOURCES=src\main.cpp src\app.cpp src\gfx.cpp src\ui.cpp src\theme.cpp src\format.cpp src\demo.cpp src\widgets.cpp src\trace_panel.cpp src\pages_a.cpp src\pages_b.cpp src\pages_c.cpp src\store.cpp src\export.cpp src\net.cpp src\providers.cpp src\live.cpp"
+set "SOURCES=src\main.cpp src\app.cpp src\gfx.cpp src\ui.cpp src\theme.cpp src\format.cpp src\demo.cpp src\widgets.cpp src\trace_panel.cpp src\pages_a.cpp src\pages_b.cpp src\pages_c.cpp src\store.cpp src\export.cpp src\net.cpp src\providers.cpp src\live.cpp src\taint.cpp"
+
+rem Symbol und Dateiangaben (Explorer-Eigenschaften) uebersetzen
+rc /nologo /fo build\version.res src\version.rc
+if errorlevel 1 goto failed
 
 cl /nologo /std:c++17 /EHsc /W3 /O2 /MT /utf-8 /DUNICODE /D_UNICODE ^
    /Fobuild\ /Fdbuild\Chainer.pdb /Febuild\Chainer.exe ^
-   %SOURCES% ^
+   %SOURCES% build\version.res ^
    /link /SUBSYSTEM:WINDOWS /INCREMENTAL:NO advapi32.lib
 
 if errorlevel 1 goto failed

@@ -10,6 +10,8 @@
 #include <windows.h>
 #include "net.h"
 #include "store.h"
+#include "taint.h"
+#include <deque>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -217,7 +219,7 @@ void setPhase(TraceCtx& c, const std::wstring& phase, const std::wstring& msg) {
 
 // Risikostufe aus den gefundenen Labels
 std::wstring riskFromLabels(const std::vector<NetLabel>& labels, std::wstring* mainLabel,
-                            std::wstring* mainSource, bool* harmful) {
+                            std::wstring* mainSource, bool* harmful, bool includeMedium = false) {
     std::wstring risk = L"none";
     if (harmful) *harmful = false;
     for (const NetLabel& l : labels) {
@@ -226,6 +228,8 @@ std::wstring riskFromLabels(const std::vector<NetLabel>& labels, std::wstring* m
             if (harmful) *harmful = true;
         } else if (l.risk == L"medium" && risk != L"high") {
             risk = L"medium";
+            // Mit der Option gelten auch Mixer und mittleres Risiko als Herkunft
+            if (includeMedium && harmful) *harmful = true;
         } else if (l.risk == L"low" && risk == L"none") {
             risk = L"low";
         }
@@ -257,6 +261,11 @@ void liveStartTrace(App& a) {
                           L"Der Startpunkt passt nicht zum Format dieser Chain.");
         return;
     }
+    if (a.traceMode == 1 && !isUtxoChain(chain)) {
+        a.traceError = tr(L"UTXO-exact tracing only works on chains with unspent outputs.",
+                          L"UTXO-genaues Verfolgen gibt es nur bei Ketten mit unverbrauchten Ausgängen.");
+        return;
+    }
 
     auto ctx = std::make_shared<TraceCtx>();
     ctx->runId = ++a.traceRunId;
@@ -280,7 +289,10 @@ void liveStartTrace(App& a) {
     double minValue = _wtof(a.traceMinValue.c_str());
     int maxNodes = (std::max)(10, (std::min)(2000, _wtoi(a.traceMaxNodes.c_str())));
     int direction = a.traceDir;   // 0 vorwärts, 1 rückwärts, 2 beides
+    bool utxoMode = a.traceMode == 1;
+    TaintModel model = (TaintModel)(std::max)(0, (std::min)(3, a.traceTaint));
     bool enrich = a.traceEnrich;
+    bool includeMedium = a.traceMedium;
     ProviderKeys keys = a.keys;
     App* app = &a;
 
@@ -289,13 +301,16 @@ void liveStartTrace(App& a) {
 
     taskRun(L"trace", tr(L"Trace ", L"Trace ") + shortHash(start, 8),
             [ctx, chain, start, maxDepth, maxTxPerAddr, maxAddrPerTx, minValue, maxNodes, direction,
-             enrich, keys]() {
+             utxoMode, model, enrich, includeMedium, keys]() {
                 TraceData& t = ctx->result;
                 long long startedMs = (long long)GetTickCount64();
-                std::map<std::wstring, size_t> nodeIndex;   // Knoten-Id -> Position
-                std::set<std::wstring> seenEdge;
-                std::set<std::wstring> visitedAddr, visitedTx;
 
+                std::map<std::wstring, size_t> nodeIndex;
+                std::set<std::wstring> seenEdge, visitedAddr, visitedTx;
+                std::map<std::wstring, NetTx> txCache;
+                std::vector<std::wstring> startIds;
+
+                // --- Bausteine des Graphen -----------------------------------
                 auto addAddrNode = [&](const std::wstring& addr, int depth) -> GNode* {
                     std::wstring id = L"a:" + addr;
                     auto it = nodeIndex.find(id);
@@ -333,7 +348,7 @@ void liveStartTrace(App& a) {
                     return &t.nodes.back();
                 };
                 auto addEdge = [&](const std::wstring& from, const std::wstring& to, double value,
-                                   bool coinbase) {
+                                   bool coinbase, bool change) {
                     std::wstring key = from + L">" + to;
                     if (seenEdge.count(key)) return;
                     seenEdge.insert(key);
@@ -342,176 +357,347 @@ void liveStartTrace(App& a) {
                     e.to = to;
                     e.valueSat = value;
                     e.coinbase = coinbase;
+                    e.change = change;
                     t.edges.push_back(e);
                     ctx->edges = (int)t.edges.size();
                 };
 
-                // Startpunkt
-                std::vector<std::pair<std::wstring, int>> frontier;
-                if (isChainAddress(start, chain)) {
-                    GNode* n = addAddrNode(start, 0);
-                    if (n) n->isStart = true;
-                    frontier.push_back({start, 0});
-                } else {
-                    // Start ist eine Transaktion: ihre Adressen bilden die Ebene 0
-                    setPhase(*ctx, L"fetching", L"tx " + start.substr(0, 12));
-                    NetTx tx = netFetchTx(chain, start, keys);
-                    ctx->calls = (int)netRequestCount();
-                    if (!tx.ok) {
-                        std::lock_guard<std::mutex> lock(ctx->m);
-                        ctx->error = tx.error;
-                        return;
-                    }
-                    GNode* tn = addTxNode(tx, 0);
-                    if (tn) tn->isStart = true;
+                // Verdrahtet eine ganze Transaktion: alle bekannten Ein- und
+                // Ausgangsadressen bekommen Knoten und Kanten. Das ist die
+                // Grundlage für eine belastbare Taint-Rechnung.
+                struct Wiring { std::vector<std::wstring> inputs, outputs; };
+                auto addTx = [&](const NetTx& tx, int depth) -> Wiring {
+                    Wiring w;
+                    GNode* tn = addTxNode(tx, depth);
+                    if (!tn) return w;
+                    std::wstring txId = L"t:" + tx.txid;
+                    std::set<std::wstring> inputAddrs;
                     for (const NetTxIn& in : tx.inputs) {
-                        if (in.address.empty()) continue;
-                        if (addAddrNode(in.address, 0))
-                            addEdge(L"a:" + in.address, L"t:" + tx.txid, in.value, in.coinbase);
-                        frontier.push_back({in.address, 0});
+                        std::wstring addr = in.coinbase ? L"coinbase" : in.address;
+                        if (addr.empty()) continue;
+                        inputAddrs.insert(addr);
+                        if (!addAddrNode(addr, (std::max)(0, depth - 1))) continue;
+                        addEdge(L"a:" + addr, txId, in.value, in.coinbase, false);
+                        w.inputs.push_back(addr);
                     }
                     for (const NetTxOut& o : tx.outputs) {
                         if (o.address.empty()) continue;
-                        if (addAddrNode(o.address, 1))
-                            addEdge(L"t:" + tx.txid, L"a:" + o.address, o.value, false);
-                        frontier.push_back({o.address, 1});
+                        // Wechselgeld: der Ausgang geht an eine der Eingangsadressen
+                        bool change = inputAddrs.count(o.address) > 0;
+                        if (!addAddrNode(o.address, depth + 1)) continue;
+                        addEdge(txId, L"a:" + o.address, o.value, false, change);
+                        w.outputs.push_back(o.address);
                     }
-                    visitedTx.insert(tx.txid);
-                }
+                    return w;
+                };
 
-                // Breitensuche
-                for (int depth = 0; depth <= maxDepth && !frontier.empty(); depth++) {
-                    std::vector<std::pair<std::wstring, int>> next;
-                    for (auto& entry : frontier) {
-                        if (ctx->cancel) return;
-                        const std::wstring& addr = entry.first;
-                        int d = entry.second;
-                        if (d > maxDepth) continue;
-                        if (visitedAddr.count(addr)) continue;
-                        visitedAddr.insert(addr);
-                        if ((int)t.nodes.size() >= maxNodes) break;
+                auto loadTx = [&](const std::wstring& txid) -> const NetTx* {
+                    auto it = txCache.find(txid);
+                    if (it != txCache.end()) return it->second.ok ? &it->second : nullptr;
+                    NetTx tx = netFetchTx(chain, txid, keys);
+                    ctx->calls = (int)netRequestCount();
+                    txCache[txid] = tx;
+                    return tx.ok ? &txCache[txid] : nullptr;
+                };
 
-                        setPhase(*ctx, L"expanding",
-                                 L"Hop " + std::to_wstring(d) + L"/" + std::to_wstring(maxDepth) + L" · " +
-                                     addr.substr(0, 12) + L"…");
+                // --- Warteschlange -------------------------------------------
+                struct Item {
+                    bool isOutput = false;
+                    std::wstring address, txid;
+                    int vout = 0, depth = 0, direction = 0;
+                };
+                std::deque<Item> queue;
 
+                auto enqueueAddresses = [&](const std::vector<std::wstring>& addrs, int depth, int dir,
+                                            const NetTx& tx, bool wantOutputs) {
+                    int taken = 0;
+                    for (const std::wstring& addr : addrs) {
+                        if (taken >= maxAddrPerTx) break;
+                        if (addr == L"coinbase") continue;
+                        // Mindestbetrag prüfen
+                        double value = 0;
+                        if (wantOutputs) {
+                            for (const NetTxOut& o : tx.outputs)
+                                if (o.address == addr) value += o.value;
+                        } else {
+                            for (const NetTxIn& i : tx.inputs)
+                                if (i.address == addr) value += i.value;
+                        }
+                        if (value < minValue) continue;
+                        taken++;
+                        if (depth > maxDepth) continue;
+                        Item it;
+                        it.address = addr;
+                        it.depth = depth;
+                        it.direction = dir;
+                        queue.push_back(it);
+                    }
+                };
+
+                // --- Startpunkt ----------------------------------------------
+                if (isChainTxid(start, chain)) {
+                    setPhase(*ctx, L"fetching", L"tx " + start.substr(0, 12));
+                    const NetTx* tx = loadTx(start);
+                    if (!tx) {
+                        std::lock_guard<std::mutex> lock(ctx->m);
+                        ctx->error = txCache.count(start) ? txCache[start].error : L"Nicht gefunden";
+                        return;
+                    }
+                    NetTx copy = *tx;
+                    Wiring w = addTx(copy, 0);
+                    startIds.push_back(L"t:" + copy.txid);
+                    for (GNode& n : t.nodes)
+                        if (n.id == L"t:" + copy.txid) n.isStart = true;
+                    visitedTx.insert(copy.txid);
+                    if (utxoMode) {
+                        // Nur die konkreten Ausgänge weiterverfolgen
+                        for (const NetTxOut& o : copy.outputs) {
+                            if (o.value < minValue) continue;
+                            Item it;
+                            it.isOutput = true;
+                            it.txid = copy.txid;
+                            it.vout = o.n;
+                            it.depth = 0;
+                            queue.push_back(it);
+                        }
+                        if (direction != 0) enqueueAddresses(w.inputs, 1, 1, copy, false);
+                    } else {
+                        if (direction != 1) enqueueAddresses(w.outputs, 1, 0, copy, true);
+                        if (direction != 0) enqueueAddresses(w.inputs, 1, 1, copy, false);
+                    }
+                } else {
+                    addAddrNode(start, 0);
+                    for (GNode& n : t.nodes)
+                        if (n.id == L"a:" + start) n.isStart = true;
+                    startIds.push_back(L"a:" + start);
+                    if (utxoMode) {
+                        // Die konkreten Coins dieser Adresse: jeder Ausgang, der
+                        // an sie zahlt, wird einzeln weiterverfolgt.
+                        setPhase(*ctx, L"fetching", start.substr(0, 12) + L"…");
                         std::wstring err;
                         std::vector<NetTx> txs =
-                            netFetchAddressTxs(chain, addr, maxTxPerAddr, keys, &err);
+                            netFetchAddressTxs(chain, start, maxTxPerAddr, keys, &err);
                         ctx->calls = (int)netRequestCount();
-                        if (ctx->cancel) return;
-
-                        GNode* an = addAddrNode(addr, d);
-                        if (!an) continue;
-
-                        double received = 0, sent = 0;
+                        if (txs.empty()) {
+                            std::lock_guard<std::mutex> lock(ctx->m);
+                            ctx->error = err.empty() ? tr(L"No transactions found.",
+                                                          L"Keine Transaktionen gefunden.")
+                                                     : err;
+                            return;
+                        }
                         for (const NetTx& tx : txs) {
-                            bool isInput = false, isOutput = false;
-                            for (const NetTxIn& in : tx.inputs)
-                                if (in.address == addr) {
-                                    isInput = true;
-                                    sent += in.value;
-                                }
+                            txCache[tx.txid] = tx;
+                            bool paysStart = false;
                             for (const NetTxOut& o : tx.outputs)
-                                if (o.address == addr) {
-                                    isOutput = true;
-                                    received += o.value;
-                                }
-
-                            // Richtung: vorwärts folgt ausgehenden, rückwärts eingehenden
-                            bool followForward = (direction == 0 || direction == 2) && isInput;
-                            bool followBackward = (direction == 1 || direction == 2) && isOutput;
-                            if (!followForward && !followBackward) continue;
-                            if (visitedTx.count(tx.txid) && !followForward && !followBackward) continue;
+                                if (o.address == start) paysStart = true;
+                            if (!paysStart) continue;
+                            addTx(tx, 0);
                             visitedTx.insert(tx.txid);
-
-                            GNode* tn = addTxNode(tx, d + (followForward ? 1 : 0));
-                            if (!tn) continue;
-
-                            if (followForward) {
-                                addEdge(L"a:" + addr, L"t:" + tx.txid, [&] {
-                                    double v = 0;
-                                    for (const NetTxIn& in : tx.inputs)
-                                        if (in.address == addr) v += in.value;
-                                    return v;
-                                }(), false);
-                                int taken = 0;
-                                for (const NetTxOut& o : tx.outputs) {
-                                    if (taken >= maxAddrPerTx) break;
-                                    if (o.address.empty() || o.address == addr) continue;
-                                    if (o.value < minValue) continue;
-                                    taken++;
-                                    if (addAddrNode(o.address, d + 2))
-                                        addEdge(L"t:" + tx.txid, L"a:" + o.address, o.value, false);
-                                    if (d + 2 <= maxDepth) next.push_back({o.address, d + 2});
-                                }
-                            }
-                            if (followBackward) {
-                                addEdge(L"t:" + tx.txid, L"a:" + addr, [&] {
-                                    double v = 0;
-                                    for (const NetTxOut& o : tx.outputs)
-                                        if (o.address == addr) v += o.value;
-                                    return v;
-                                }(), false);
-                                int taken = 0;
-                                for (const NetTxIn& in : tx.inputs) {
-                                    if (taken >= maxAddrPerTx) break;
-                                    if (in.address.empty() || in.address == addr) continue;
-                                    if (in.value < minValue) continue;
-                                    taken++;
-                                    if (addAddrNode(in.address, d + 2))
-                                        addEdge(L"a:" + in.address, L"t:" + tx.txid, in.value, in.coinbase);
-                                    if (d + 2 <= maxDepth) next.push_back({in.address, d + 2});
-                                }
+                            for (const NetTxOut& o : tx.outputs) {
+                                if (o.address != start || o.value < minValue) continue;
+                                Item it;
+                                it.isOutput = true;
+                                it.txid = tx.txid;
+                                it.vout = o.n;
+                                it.depth = 1;
+                                queue.push_back(it);
                             }
                         }
-
-                        // Salden der Adresse eintragen
-                        for (GNode& n : t.nodes) {
-                            if (n.id != L"a:" + addr) continue;
-                            n.receivedSat = received;
-                            n.sentSat = sent;
-                            break;
-                        }
-
-                        // Cluster: Adressen, die gemeinsam als Eingang auftreten,
-                        // gehören mit hoher Wahrscheinlichkeit derselben Wallet.
-                        for (const NetTx& tx : txs) {
-                            if (tx.inputs.size() < 2) continue;
-                            bool mine = false;
-                            for (const NetTxIn& in : tx.inputs)
-                                if (in.address == addr) mine = true;
-                            if (!mine) continue;
-                            int cluster = 0;
-                            for (const NetTxIn& in : tx.inputs) {
-                                auto it = nodeIndex.find(L"a:" + in.address);
-                                if (it != nodeIndex.end() && t.nodes[it->second].clusterId) {
-                                    cluster = t.nodes[it->second].clusterId;
-                                    break;
-                                }
-                            }
-                            if (!cluster) cluster = ++t.clusters;
-                            for (const NetTxIn& in : tx.inputs) {
-                                auto it = nodeIndex.find(L"a:" + in.address);
-                                if (it != nodeIndex.end()) t.nodes[it->second].clusterId = cluster;
-                            }
-                        }
+                    } else {
+                        Item it;
+                        it.address = start;
+                        it.depth = 0;
+                        it.direction = direction;
+                        queue.push_back(it);
                     }
-                    frontier.swap(next);
+                }
+
+                // --- Durchlauf ------------------------------------------------
+                while (!queue.empty()) {
+                    if (ctx->cancel) return;
                     if ((int)t.nodes.size() >= maxNodes) {
                         t.truncated = true;
                         break;
                     }
+                    Item item = queue.front();
+                    queue.pop_front();
+
+                    // --- UTXO-genau: einen einzelnen Ausgang weiterverfolgen ---
+                    if (item.isOutput) {
+                        if (item.depth >= maxDepth) {
+                            t.truncated = true;
+                            continue;
+                        }
+                        auto itTx = txCache.find(item.txid);
+                        const NetTx* tx = itTx != txCache.end() && itTx->second.ok ? &itTx->second
+                                                                                  : loadTx(item.txid);
+                        if (!tx) continue;
+                        const NetTxOut* out = nullptr;
+                        for (const NetTxOut& o : tx->outputs)
+                            if (o.n == item.vout) out = &o;
+                        if (!out) continue;
+                        std::wstring outKey = out->address;
+
+                        setPhase(*ctx, L"following",
+                                 tr(L"coin ", L"Coin ") + shortHash(item.txid, 6) + L":" +
+                                     std::to_wstring(item.vout));
+
+                        std::wstring spendTxid = out->spentTxid;
+                        bool knownUnspent = false;
+                        if (spendTxid.empty()) {
+                            std::vector<NetOutspend> spends = netFetchOutspends(chain, item.txid, keys);
+                            ctx->calls = (int)netRequestCount();
+                            if (item.vout >= 0 && item.vout < (int)spends.size()) {
+                                spendTxid = spends[(size_t)item.vout].txid;
+                                knownUnspent = !spends[(size_t)item.vout].spent;
+                            }
+                        }
+                        if (spendTxid.empty()) {
+                            // Der Coin liegt noch unverbraucht auf der Adresse
+                            if (!outKey.empty()) {
+                                GNode* n = addAddrNode(outKey, item.depth);
+                                if (n) {
+                                    n->notFollowed = !knownUnspent;
+                                    if (knownUnspent && n->label.empty()) {
+                                        n->label = tr(L"not spent yet", L"noch nicht ausgegeben");
+                                        n->labelSource = L"chainer";
+                                    }
+                                }
+                            }
+                            continue;
+                        }
+                        const NetTx* next = loadTx(spendTxid);
+                        if (!next) continue;
+                        NetTx copy = *next;
+                        if (!visitedTx.count(copy.txid)) {
+                            addTx(copy, item.depth + 1);
+                            visitedTx.insert(copy.txid);
+                        }
+                        int taken = 0;
+                        for (const NetTxOut& o : copy.outputs) {
+                            if (taken >= maxAddrPerTx) break;
+                            if (o.value < minValue) continue;
+                            if (!o.address.empty() && o.address == outKey) continue;
+                            taken++;
+                            Item nit;
+                            nit.isOutput = true;
+                            nit.txid = copy.txid;
+                            nit.vout = o.n;
+                            nit.depth = item.depth + 2;
+                            queue.push_back(nit);
+                        }
+                        continue;
+                    }
+
+                    // --- Adressbasiert ----------------------------------------
+                    if (visitedAddr.count(item.address)) continue;
+                    visitedAddr.insert(item.address);
+                    GNode* an = addAddrNode(item.address, item.depth);
+                    if (!an) continue;
+                    if (item.depth >= maxDepth) {
+                        an->notFollowed = true;
+                        continue;
+                    }
+
+                    setPhase(*ctx, L"expanding",
+                             L"Hop " + std::to_wstring(item.depth) + L"/" + std::to_wstring(maxDepth) +
+                                 L" · " + shortHash(item.address, 8));
+
+                    std::wstring err;
+                    std::vector<NetTx> txs =
+                        netFetchAddressTxs(chain, item.address, maxTxPerAddr, keys, &err);
+                    ctx->calls = (int)netRequestCount();
+                    if (ctx->cancel) return;
+
+                    double received = 0, sent = 0;
+                    int used = 0;
+                    for (const NetTx& tx : txs) {
+                        txCache[tx.txid] = tx;
+                        bool asInput = false, asOutput = false;
+                        for (const NetTxIn& in : tx.inputs)
+                            if (in.address == item.address) {
+                                asInput = true;
+                                sent += in.value;
+                            }
+                        for (const NetTxOut& o : tx.outputs)
+                            if (o.address == item.address) {
+                                asOutput = true;
+                                received += o.value;
+                            }
+                        // Nur Transaktionen, die zur Richtung passen
+                        if (item.direction == 0 && !asInput) continue;
+                        if (item.direction == 1 && !asOutput) continue;
+                        if (!asInput && !asOutput) continue;
+                        if (used++ >= maxTxPerAddr) {
+                            an = &t.nodes[nodeIndex[L"a:" + item.address]];
+                            an->notFollowed = true;
+                            break;
+                        }
+                        if (visitedTx.count(tx.txid)) continue;
+                        visitedTx.insert(tx.txid);
+
+                        Wiring w = addTx(tx, item.depth + 1);
+                        if (item.direction == 2) {
+                            enqueueAddresses(w.outputs, item.depth + 2, 2, tx, true);
+                            enqueueAddresses(w.inputs, item.depth + 2, 2, tx, false);
+                        } else if (item.direction == 0 && asInput) {
+                            enqueueAddresses(w.outputs, item.depth + 2, 0, tx, true);
+                        } else if (item.direction == 1 && asOutput) {
+                            enqueueAddresses(w.inputs, item.depth + 2, 1, tx, false);
+                        }
+                    }
+
+                    // Salden eintragen
+                    {
+                        auto it = nodeIndex.find(L"a:" + item.address);
+                        if (it != nodeIndex.end()) {
+                            t.nodes[it->second].receivedSat = received;
+                            t.nodes[it->second].sentSat = sent;
+                        }
+                    }
+
+                    // Cluster: gemeinsame Eingänge gehören derselben Wallet
+                    for (const NetTx& tx : txs) {
+                        if (tx.inputs.size() < 2) continue;
+                        bool mine = false;
+                        for (const NetTxIn& in : tx.inputs)
+                            if (in.address == item.address) mine = true;
+                        if (!mine) continue;
+                        int cluster = 0;
+                        for (const NetTxIn& in : tx.inputs) {
+                            auto it = nodeIndex.find(L"a:" + in.address);
+                            if (it != nodeIndex.end() && t.nodes[it->second].clusterId) {
+                                cluster = t.nodes[it->second].clusterId;
+                                break;
+                            }
+                        }
+                        if (!cluster) cluster = ++t.clusters;
+                        for (const NetTxIn& in : tx.inputs) {
+                            auto it = nodeIndex.find(L"a:" + in.address);
+                            if (it != nodeIndex.end()) t.nodes[it->second].clusterId = cluster;
+                        }
+                    }
                 }
+                if (!queue.empty()) t.truncated = true;
                 if (ctx->cancel) return;
 
-                // Labels für die gefundenen Adressen (nur eine begrenzte Anzahl,
-                // damit die Fremdquellen nicht überrannt werden).
+                // --- Salden der Knoten aus dem Graphen ergänzen ---------------
+                // Adressen, die nur als Gegenseite auftauchen, haben noch keine
+                // Zahlen; sie ergeben sich aus den Kanten.
+                for (GNode& n : t.nodes) {
+                    if (!n.isAddress || n.receivedSat > 0 || n.sentSat > 0) continue;
+                    for (const GEdge& e : t.edges) {
+                        if (e.to == n.id) n.receivedSat += e.valueSat;
+                        if (e.from == n.id) n.sentSat += e.valueSat;
+                    }
+                }
+
+                // --- Labels ---------------------------------------------------
                 if (enrich) {
-                    setPhase(*ctx, L"labelling", L"Labels");
+                    setPhase(*ctx, L"labelling", tr(L"labels", L"Labels"));
                     int done = 0;
                     for (GNode& n : t.nodes) {
-                        if (!n.isAddress || done >= 40) continue;
+                        if (!n.isAddress || n.address == L"coinbase" || done >= 40) continue;
                         if (ctx->cancel) return;
                         done++;
                         std::vector<NetLabel> labels = netFetchLabels(chain, n.address, keys, nullptr);
@@ -519,45 +705,84 @@ void liveStartTrace(App& a) {
                         if (labels.empty()) continue;
                         std::wstring mainLabel, mainSource;
                         bool harmful = false;
-                        n.risk = riskFromLabels(labels, &mainLabel, &mainSource, &harmful);
-                        n.label = mainLabel;
-                        n.labelSource = mainSource;
+                        n.risk = riskFromLabels(labels, &mainLabel, &mainSource, &harmful, includeMedium);
+                        if (n.label.empty() || n.labelSource == L"chainer") {
+                            n.label = mainLabel;
+                            n.labelSource = mainSource;
+                        }
                         n.extraLabels = (int)labels.size() - 1;
                         n.isRiskSource = harmful;
                     }
                 }
 
-                // Belastete Zuflüsse markieren: alles, was von einer als
-                // schädlich gemeldeten Adresse aus erreichbar ist.
+                // --- Taint ab dem Startpunkt ----------------------------------
+                setPhase(*ctx, L"taint", tr(L"taint analysis", L"Taint-Analyse"));
+                t.taintedOutSat = propagateTaint(t.nodes, t.edges, startIds, model);
+                t.taintModel = model;
+
+                // --- Herkunft: Geld von schädlichen Adressen ------------------
+                setPhase(*ctx, L"heuristics", tr(L"origin", L"Herkunft"));
                 {
-                    std::set<std::wstring> tainted;
-                    for (const GNode& n : t.nodes)
-                        if (n.isRiskSource) tainted.insert(n.id);
-                    for (int round = 0; round < 8; round++) {
-                        bool changed = false;
-                        for (GEdge& e : t.edges) {
-                            if (tainted.count(e.from) && !tainted.count(e.to)) {
-                                tainted.insert(e.to);
-                                changed = true;
+                    std::map<std::wstring, double> outSum;
+                    for (const GEdge& e : t.edges) outSum[e.from] += e.valueSat;
+
+                    std::map<std::wstring, double> riskSeeds;
+                    for (const GNode& n : t.nodes) {
+                        if (!n.isAddress || !n.isRiskSource) continue;
+                        double outflow = outSum.count(n.id) ? outSum[n.id] : 0.0;
+                        t.riskSources++;
+                        if (outflow > 0) riskSeeds[n.id] = outflow;
+                    }
+
+                    if (!riskSeeds.empty()) {
+                        TaintModel riskModel = model == TaintModel::None ? TaintModel::Haircut : model;
+                        FlowResult flow = propagateFlow(t.nodes, t.edges, riskSeeds, riskModel, true);
+                        for (size_t i = 0; i < t.edges.size(); i++) {
+                            t.edges[i].riskSat = flow.edgeAmount[i];
+                            t.edges[i].risky = flow.edgeAmount[i] > 0;
+                        }
+                        for (GNode& n : t.nodes) {
+                            if (!n.isAddress) continue;
+                            double amount = flow.nodeAmount.count(n.id) ? flow.nodeAmount[n.id] : 0.0;
+                            if (amount <= 0) continue;
+                            n.riskFromSat = amount;
+                            n.riskFromRatio =
+                                n.receivedSat > 0 ? (std::min)(1.0, amount / n.receivedSat) : 1.0;
+                            auto it = flow.nodeSources.find(n.id);
+                            if (it != flow.nodeSources.end())
+                                for (const std::wstring& src : it->second)
+                                    n.riskSources.push_back(src.substr(2));
+                            if (!n.isRiskSource) t.riskAffected++;
+                        }
+                        t.riskInflowSat = flow.totalOut;
+
+                        // Transaktionen kennzeichnen, die belastetes Geld bewegen
+                        for (GNode& n : t.nodes) {
+                            if (n.isAddress) continue;
+                            for (const GEdge& e : t.edges)
+                                if (e.to == n.id && e.riskSat > 0) n.carriesRisk = true;
+                        }
+
+                        // Was ging direkt an eine schädliche Adresse?
+                        std::set<std::wstring> riskIds;
+                        for (const GNode& n : t.nodes)
+                            if (n.isRiskSource) riskIds.insert(n.id);
+                        for (const GNode& tx : t.nodes) {
+                            if (tx.isAddress) continue;
+                            double paidToRisk = 0;
+                            for (const GEdge& e : t.edges)
+                                if (e.from == tx.id && riskIds.count(e.to)) paidToRisk += e.valueSat;
+                            if (paidToRisk <= 0) continue;
+                            for (const GEdge& e : t.edges) {
+                                if (e.to != tx.id) continue;
+                                auto it = nodeIndex.find(e.from);
+                                if (it == nodeIndex.end()) continue;
+                                GNode& src = t.nodes[it->second];
+                                if (!src.isAddress) continue;
+                                src.sentToRiskSat += (std::min)(e.valueSat, paidToRisk);
                             }
                         }
-                        if (!changed) break;
                     }
-                    for (GEdge& e : t.edges) e.risky = tainted.count(e.from) > 0;
-                    for (GNode& n : t.nodes) {
-                        if (!tainted.count(n.id) || n.isRiskSource) continue;
-                        if (n.isAddress) {
-                            n.riskFromRatio = 1.0;
-                            t.riskAffected++;
-                        } else {
-                            n.carriesRisk = true;
-                        }
-                    }
-                    for (const GNode& n : t.nodes)
-                        if (n.isRiskSource) {
-                            t.riskSources++;
-                            t.riskInflowSat += n.receivedSat;
-                        }
                 }
 
                 for (const GNode& n : t.nodes) {
@@ -575,15 +800,16 @@ void liveStartTrace(App& a) {
                 t.evidence = evidenceTake();
                 t.evidenceDigest = ::evidenceDigest(t.evidence);
                 // Welche Quellen haben geantwortet?
-                std::map<std::wstring, int> used;
+                std::map<std::wstring, int> usedHosts;
                 for (const EvidenceEntry& e : t.evidence) {
                     size_t a1 = e.url.find(L"://");
                     if (a1 == std::wstring::npos) continue;
                     size_t a2 = e.url.find(L'/', a1 + 3);
-                    std::wstring host = e.url.substr(a1 + 3, (a2 == std::wstring::npos ? e.url.size() : a2) - a1 - 3);
-                    used[host]++;
+                    std::wstring host =
+                        e.url.substr(a1 + 3, (a2 == std::wstring::npos ? e.url.size() : a2) - a1 - 3);
+                    usedHosts[host]++;
                 }
-                for (auto& kv : used)
+                for (auto& kv : usedHosts)
                     t.providersUsed.push_back(kv.first + L" ×" + std::to_wstring(kv.second));
                 ctx->calls = t.apiCalls;
                 layoutTrace(t);

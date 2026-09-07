@@ -633,6 +633,7 @@ float traceGraphCanvas(App& a, float x, float y, float w, float h) {
             if (n.extraLabels > 0) foot += L" · " + std::to_wstring(n.extraLabels) + tr(L" label", L" Label");
             if (n.behaviorCount > 0)
                 foot += L" · " + std::to_wstring(n.behaviorCount) + tr(L" patterns", L" Muster");
+            if (n.notFollowed) foot += tr(L" · not followed", L" · nicht verfolgt");
             u.p->text(truncate(u, foot, sf, innerW), Rect(box.x + px2, cy, innerW, 12.f * z), sf, th.fg2.op(op));
         } else {
             Font mono = mPx((std::max)(6.5f, 10.f * z));

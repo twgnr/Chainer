@@ -83,6 +83,14 @@ NetAddress netFetchAddress(int chain, const std::wstring& addr, const ProviderKe
 std::vector<NetTx> netFetchAddressTxs(int chain, const std::wstring& addr, int limit,
                                       const ProviderKeys& k, std::wstring* error);
 NetTx netFetchTx(int chain, const std::wstring& txid, const ProviderKeys& k);
+
+// Wohin wurde jeder Ausgang einer Transaktion weitergegeben? Index = Ausgangsnummer.
+struct NetOutspend {
+    bool spent = false;
+    std::wstring txid;   // ausgebende Transaktion
+    int vin = -1;
+};
+std::vector<NetOutspend> netFetchOutspends(int chain, const std::wstring& txid, const ProviderKeys& k);
 bool netFetchPrice(int chain, double* eur, double* usd, std::wstring* source);
 std::vector<NetLabel> netFetchLabels(int chain, const std::wstring& addr, const ProviderKeys& k,
                                      std::vector<std::wstring>* unreachable);
