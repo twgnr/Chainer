@@ -5,6 +5,8 @@
 A Next.js/React application that analyses cryptocurrency addresses and transactions across several **free** data
 sources and traces the flow of funds as a graph.
 
+![Interface of the scanner](docs/chainer.png)
+
 ## Features
 
 ### Analysis
