@@ -6,13 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "check": "npm run typecheck && npm run lint && npm test && npm run test:python && npm run build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run",
+    "test:python": "node scripts/run_python.cjs -m unittest discover -s scripts -p \"test_*.py\"",
     "test:ui": "vitest run --project ansicht",
     "test:watch": "vitest",
-    "fixtures": "node scripts/record-fixtures.mjs"
+    "fixtures": "node scripts/run_python.cjs scripts/record_fixtures.py"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.6",
@@ -21,7 +22,7 @@
     "jose": "^6.2.10",
     "mongoose": "^9.9.4",
     "next": "16.3.4",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^10.0.13",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "^4.5.4"

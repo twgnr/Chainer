@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * gibt sie in der Antwort zurück. Damit lässt sich ein Fehlerbild eines Nutzers
  * eindeutig einer Protokollzeile zuordnen.
  */
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const existing = req.headers.get("x-request-id");
   const id = existing && existing.length <= 64 ? existing : crypto.randomUUID();
 

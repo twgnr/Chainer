@@ -130,12 +130,31 @@ register it in `src/lib/providers/registry.ts`.
 ## Installation
 
 ```bash
-npm install
-cp .env.example .env.local   # adjust the values; everything is optional
-npm run dev                  # http://localhost:3000
+./run.sh --install           # install/check npm dependencies only
+./run.sh --local              # build and run locally, without MongoDB
 ```
 
-For production: `npm run build && npm start`.
+`run.sh` requires Node.js 22+ and npm. It picks an available port automatically;
+set a preferred port with `./run.sh --local --port 3001`. For development with
+hot reload, use `npm run dev` after `./run.sh --install`.
+
+For the full production setup with MongoDB, use `./run.sh --docker`. Docker
+Engine and the Docker Compose plugin must already be installed. The script
+creates `.env.local` with private application secrets when needed and starts
+the services on an available port. Use `./run.sh --docker --port 3001` to
+choose a preferred port; if it is occupied, the next free port is selected.
+
+`./run.sh --install` only installs/checks the local npm dependencies; it does
+not build or start the app. Python is not required to run Chainer. Python 3.10+
+is used only by the provider-fixture recording tool and its offline unit tests;
+it uses Python's standard library and adds no Python package dependencies.
+
+For a manual Docker Compose setup, provide `AUTH_SECRET` in the environment or
+use the generated `.env.local` explicitly:
+
+```bash
+docker compose --env-file .env.local up -d
+```
 
 Without `MONGODB_URI` everything runs in guest mode. Login, cases, watchlist, teams and the persistent cache need
 `MONGODB_URI` and `AUTH_SECRET`.
@@ -166,13 +185,16 @@ src/lib/apitoken.ts        Access tokens for scripts
 src/lib/caseRefresh.ts     Automatic case refresh
 src/lib/logger.ts          Structured logging with a request id
 src/lib/migrate.ts         Schema versioning of stored cases
-src/middleware.ts          Assignment of the request id
+src/proxy.ts               Assignment of the request id
 src/lib/ratelimit.ts       Rate limit for the expensive endpoints
 src/lib/cache.ts           Two-tier cache (memory and MongoDB)
 src/lib/auth.ts            Session, user keys, provider context
 src/lib/watch.ts           Watchlist check and notification
 src/lib/models             Mongoose models (User, Org, Case, Annotation, Watch, CacheEntry)
 src/instrumentation.ts     Optional timer for the watchlist
+scripts/record_fixtures.py Records live responses and trims them for offline tests
+scripts/test_record_fixtures.py Offline tests for fixture trimming
+run.sh                     Linux dependency setup and local/Docker runner
 ```
 
 ## API
@@ -220,10 +242,33 @@ OpenAPI document at `/api/openapi` is translated as well.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs types, style, tests and a production build on every push and pull request. The same
-four steps run locally with `npm run check`.
+`.github/workflows/ci.yml` runs types, style, TypeScript and Python tests, and a production build on every push and
+pull request. `npm run check` runs those web checks locally. A separate Windows job builds the desktop app.
+
+Maintenance fixes: request-ID handling now uses the Next.js 16 `proxy.ts` convention instead of deprecated
+middleware, and Nodemailer was upgraded to patched major version 10 to resolve dependency security advisories.
 
 ### Docker
+
+For a Linux installation with MongoDB, run:
+
+```bash
+./run.sh --docker
+```
+
+The script creates private application secrets in `.env.local` if needed,
+builds the containers, and starts the services. Docker Engine and the Docker
+Compose plugin must already be installed. For a local guest-mode setup without
+MongoDB, use `./run.sh --local` instead; it requires Node.js 22+ and npm.
+Both options start the production app and select a free port automatically.
+Use `./run.sh --docker --port 3001` to set a preferred port. Python 3.10+ is
+only needed for Python tests and recording provider fixtures.
+
+To install or refresh only the local npm dependencies without building or
+starting Chainer, run `./run.sh --install`. Node.js 22+ and npm must already
+be installed.
+
+To run the stack manually:
 
 ```bash
 export AUTH_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
@@ -231,8 +276,8 @@ docker compose up -d
 ```
 
 The bundled `docker-compose.yml` starts the application together with a MongoDB. The container uses the standalone
-output of Next.js, runs as an unprivileged user and comes with a health check. All environment variables from
-`.env.example` can be passed through.
+output of Next.js, runs as an unprivileged user and comes with a health check. Optional configuration values can be
+set in `.env.local`.
 
 ### Privacy
 
@@ -269,10 +314,12 @@ npm test          # once
 npm run test:watch
 ```
 
-`npm run test:ui` runs only the component tests, `npm run check` everything that CI runs (types, style, tests,
-build).
+`npm run test:ui` runs only the component tests; `npm run check` runs the web checks (types, style, TypeScript and
+Python tests, production build).
+Python 3.10+ is required for `npm run check` and `npm run fixtures`.
 
-The tests cover four levels and touch neither the network nor the database:
+The tests cover four levels and touch neither the network nor the database. The Python unit tests also check fixture
+trimming without network access; only `npm run fixtures` contacts provider APIs to record fresh data.
 
 - **Logic**: the trace engine and the connection search against a synthetic chain, taint models, change, peeling and
   deposit detection, timing patterns, risk classification, wallet fingerprint, address formats, formatting,
@@ -283,7 +330,7 @@ The tests cover four levels and touch neither the network nor the database:
   German text into the English interface.
 - **Conversion of the provider data**: recorded real responses in `src/lib/providers/__fixtures__/` are sent through
   the providers and the result is checked. If a provider changes its format, it shows up here. Re-record with
-  `npm run fixtures`.
+  `npm run fixtures` (requires Python 3.10+).
 - **API routes and components**: validation, permissions, error codes and rate limiting of all endpoints with the
   providers swapped out; the components render under jsdom in both languages.
 
