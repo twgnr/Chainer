@@ -1,7 +1,7 @@
 name: CI
 
 # Läuft bei jedem Push und jedem Pull Request auf den Hauptzweig.
-# Alle vier Schritte sind dieselben, die auch lokal über `npm run check` laufen.
+# Alle Prüfungen entsprechen dem lokalen `npm run check`.
 on:
   push:
     branches: [master, main]
@@ -26,6 +26,10 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Abhängigkeiten installieren
         run: npm ci
 
@@ -38,6 +42,9 @@ jobs:
       - name: Tests
         run: npm test
 
+      - name: Python-Tests
+        run: npm run test:python
+
       # Der Build deckt ab, was die Tests nicht sehen: Server-Komponenten,
       # Metadaten und das Zusammenspiel der Seiten.
       - name: Produktionsbuild
@@ -45,3 +52,13 @@ jobs:
         env:
           # Kein Zugriff auf eine Datenbank im Build; der Gastmodus genügt.
           NEXT_TELEMETRY_DISABLED: "1"
+
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Desktop-Anwendung bauen
+        run: cmd /c desktop\build.bat

@@ -127,12 +127,34 @@ implementieren und in `src/lib/providers/registry.ts` eintragen.
 ## Installation
 
 ```bash
-npm install
-cp .env.example .env.local   # Werte anpassen; alles ist optional
-npm run dev                  # http://localhost:3000
+./run.sh --install           # nur npm-Abhängigkeiten installieren/prüfen
+./run.sh --local              # lokal bauen und starten, ohne MongoDB
 ```
 
-Produktivbetrieb: `npm run build && npm start`.
+`run.sh` benötigt Node.js 22+ und npm. Das Skript wählt automatisch einen
+freien Port; mit `./run.sh --local --port 3001` lässt sich ein Wunschport
+angeben. Für die Entwicklung mit Hot Reload nach `./run.sh --install`
+`npm run dev` verwenden.
+
+Für den vollständigen Produktivbetrieb mit MongoDB `./run.sh --docker`
+verwenden. Docker Engine und das Docker Compose Plugin müssen bereits
+installiert sein. Das Skript erzeugt bei Bedarf private Anwendungsschlüssel in
+`.env.local` und startet die Dienste auf einem freien Port. Mit
+`./run.sh --docker --port 3001` lässt sich ein Wunschport setzen; wenn er
+belegt ist, wird der nächste freie Port gewählt.
+
+`./run.sh --install` installiert oder prüft nur die lokalen npm-Abhängigkeiten;
+die Anwendung wird weder gebaut noch gestartet. Python ist zum Ausführen von
+Chainer nicht erforderlich. Python 3.10+ wird nur vom Werkzeug zum Aufzeichnen
+der Provider-Prüfdaten und dessen Offline-Unit-Tests verwendet. Es nutzt die
+Python-Standardbibliothek und benötigt keine zusätzlichen Python-Pakete.
+
+Für einen manuellen Docker-Compose-Start `AUTH_SECRET` in der Umgebung setzen
+oder `.env.local` explizit angeben:
+
+```bash
+docker compose --env-file .env.local up -d
+```
 
 Ohne `MONGODB_URI` läuft alles im Gastmodus. Für Login, Fälle, Watchlist, Teams und den dauerhaften Cache
 werden `MONGODB_URI` und `AUTH_SECRET` benötigt.
@@ -163,13 +185,16 @@ src/lib/apitoken.ts        Zugriffstoken für Skripte
 src/lib/caseRefresh.ts     Automatische Fallaktualisierung
 src/lib/logger.ts          Strukturierte Protokollierung mit Anfragekennung
 src/lib/migrate.ts         Schemaversionierung gespeicherter Fälle
-src/middleware.ts          Vergabe der Anfragekennung
+src/proxy.ts               Vergabe der Anfragekennung
 src/lib/ratelimit.ts       Rate-Limit der teuren Endpunkte
 src/lib/cache.ts           Zweistufiger Cache (Speicher und MongoDB)
 src/lib/auth.ts            Session, Nutzer-Keys, Provider-Kontext
 src/lib/watch.ts           Watchlist-Prüfung und Benachrichtigung
 src/lib/models             Mongoose-Modelle (User, Org, Case, Annotation, Watch, CacheEntry)
 src/instrumentation.ts     Optionaler Zeitgeber für die Watchlist
+scripts/record_fixtures.py Zeichnet Live-Antworten auf und kürzt sie für Offline-Tests
+scripts/test_record_fixtures.py Offline-Tests für das Kürzen der Prüfdaten
+run.sh                     Linux-Setup der Abhängigkeiten und lokaler/Docker-Start
 ```
 
 ## API
@@ -217,10 +242,36 @@ OpenAPI-Dokument unter `/api/openapi` wird übersetzt.
 
 ### Fortlaufende Prüfung
 
-`.github/workflows/ci.yml` prüft bei jedem Push und jedem Pull Request Typen, Stil, Tests und einen Produktionsbuild.
-Dieselben vier Schritte laufen lokal mit `npm run check`.
+`.github/workflows/ci.yml` prüft bei jedem Push und Pull Request Typen, Stil, TypeScript- und Python-Tests sowie
+einen Produktionsbuild. `npm run check` führt diese Web-Prüfungen lokal aus. Ein separater Windows-Job baut die
+Desktop-Anwendung.
+
+Wartungsänderungen: Die Anfragenkennung verwendet jetzt die Next.js-16-Konvention `proxy.ts` statt des veralteten
+Middleware-Musters. Nodemailer wurde auf die korrigierte Hauptversion 10 aktualisiert, um Sicherheitswarnungen der
+Abhängigkeiten zu beheben.
 
 ### Docker
+
+Für eine Linux-Installation mit MongoDB:
+
+```bash
+./run.sh --docker
+```
+
+Das Skript erzeugt bei Bedarf private Anwendungsschlüssel in `.env.local`,
+baut die Container und startet die Dienste. Docker Engine und das Docker
+Compose Plugin müssen bereits installiert sein. Für eine lokale Installation
+im Gastmodus ohne MongoDB `./run.sh --local` verwenden; dafür sind Node.js 22+
+und npm erforderlich. Beide Varianten starten die Produktionsversion und
+wählen automatisch einen freien Port. Mit `./run.sh --docker --port 3001`
+lässt sich ein Wunschport angeben. Python 3.10+ wird nur für Python-Tests und
+zum Aufzeichnen der Provider-Prüfdaten benötigt.
+
+Mit `./run.sh --install` werden nur die lokalen npm-Abhängigkeiten installiert
+oder aktualisiert; es wird weder gebaut noch gestartet. Node.js 22+ und npm
+müssen bereits installiert sein.
+
+Für den manuellen Start:
 
 ```bash
 export AUTH_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
@@ -228,8 +279,8 @@ docker compose up -d
 ```
 
 Das mitgelieferte `docker-compose.yml` startet die Anwendung zusammen mit einer MongoDB. Der Container nutzt die
-Standalone-Ausgabe von Next.js, läuft als unprivilegierter Nutzer und bringt eine Zustandsprüfung mit. Alle
-Umgebungsvariablen aus `.env.example` lassen sich durchreichen.
+Standalone-Ausgabe von Next.js, läuft als unprivilegierter Nutzer und bringt eine Zustandsprüfung mit. Optionale
+Konfigurationswerte können in `.env.local` gesetzt werden.
 
 ### Datenschutz
 
@@ -266,10 +317,13 @@ npm test          # einmalig
 npm run test:watch
 ```
 
-`npm run test:ui` führt nur die Komponententests aus, `npm run check` alles, was auch die CI prüft (Typen, Stil,
-Tests, Build).
+`npm run test:ui` führt nur die Komponententests aus; `npm run check` führt die Web-Prüfungen aus (Typen, Stil,
+TypeScript- und Python-Tests, Produktionsbuild).
+Für `npm run check` und `npm run fixtures` wird Python 3.10+ benötigt.
 
-Die Tests decken vier Ebenen ab und greifen weder auf das Netz noch auf die Datenbank zu:
+Die Tests decken vier Ebenen ab und greifen weder auf das Netz noch auf die Datenbank zu. Die Python-Unit-Tests
+prüfen zusätzlich das Kürzen der Prüfdaten ohne Netzwerkzugriff; nur `npm run fixtures` kontaktiert Provider-APIs,
+um aktuelle Prüfdaten aufzuzeichnen.
 
 - **Logik**: die Trace-Engine und die Verbindungssuche gegen eine erfundene Kette, Taint-Modelle, Wechselgeld-,
   Peeling- und Einzahlungserkennung, Zeitmuster, Risikoeinstufung, Wallet-Fingerabdruck, Adressformate,
@@ -280,7 +334,7 @@ Die Tests decken vier Ebenen ab und greifen weder auf das Netz noch auf die Date
   Tabelle stillschweigend deutschen Text in die englische Oberfläche tragen.
 - **Umwandlung der Anbieterdaten**: aufgezeichnete echte Antworten in `src/lib/providers/__fixtures__/` werden durch
   die Provider geschickt und das Ergebnis geprüft. Ändert ein Anbieter sein Format, fällt es hier auf. Neu
-  aufzeichnen mit `npm run fixtures`.
+  aufzeichnen mit `npm run fixtures` (Python 3.10+ erforderlich).
 - **API-Routen und Komponenten**: Validierung, Berechtigungen, Fehlercodes und Ratenbegrenzung aller Endpunkte mit
   ausgetauschten Providern; die Komponenten werden unter jsdom in beiden Sprachen gerendert.
 

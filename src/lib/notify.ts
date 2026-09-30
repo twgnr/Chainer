@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 
 export interface NotifyTarget {
   email?: string;
@@ -22,7 +22,7 @@ function smtpConfigured() {
   return !!process.env.SMTP_HOST && !!process.env.SMTP_FROM;
 }
 
-let transport: nodemailer.Transporter | null = null;
+let transport: Transporter | null = null;
 function mailer() {
   if (transport) return transport;
   transport = nodemailer.createTransport({

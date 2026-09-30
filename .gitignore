@@ -40,6 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# python
+__pycache__/
+*.py[cod]
+
 # C++ desktop application (desktop/) - details in desktop/.gitignore
 /desktop/build/
 *.obj
